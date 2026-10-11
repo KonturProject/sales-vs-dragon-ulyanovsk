@@ -1,0 +1,34 @@
+{
+    "ok": true,
+    "weekStart": "2026-09-08",
+    "weekEnd": "2026-09-15",
+    "plan": 5000000,
+    "totalThisWeek": 3200000,
+    "byRop": [
+        {
+            "ropName": "ВШ1",
+            "amount": 720000
+        },
+        {
+            "ropName": "ВШ4",
+            "amount": 610000
+        },
+        {
+            "ropName": "ВШ5",
+            "amount": 540000
+        },
+        {
+            "ropName": "ВШ6",
+            "amount": 480000
+        },
+        {
+            "ropName": "ВШ9",
+            "amount": 390000
+        },
+        {
+            "ropName": "ВШ10",
+            "amount": 460000
+        }
+    ],
+    "lastUpdated": "2026-09-12T10:32:00+03:00"
+}

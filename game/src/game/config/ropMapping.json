@@ -1,0 +1,25 @@
+{
+    "_comment": "Sheet group names -> department slot. The short code (ВШ1 …) is what goes into the sheet's drop-down; the full CRM names are accepted as synonyms, and any name containing «ВШ<число>» is matched by that number (see RosterConfig). The look of the hero standing in a slot is NOT fixed here: it is chosen in the admin page (tab «Герои») and defaults to heroRoster.json.",
+    "labels": {
+        "slot_1": "ВШ1",
+        "slot_2": "ВШ4",
+        "slot_3": "ВШ5",
+        "slot_4": "ВШ6",
+        "slot_5": "ВШ9",
+        "slot_6": "ВШ10"
+    },
+    "mapping": {
+        "ВШ1": "slot_1",
+        "ВШ4": "slot_2",
+        "ВШ5": "slot_3",
+        "ВШ6": "slot_4",
+        "ВШ9": "slot_5",
+        "ВШ10": "slot_6",
+        "АП_НП_ОУ_Ульяновск_ВШ1_ГБ": "slot_1",
+        "АП_НП_ОУ_Ульяновск_ВШ4_ФИН_БУХ": "slot_2",
+        "АП_НП_ОУ_Москва_ВШ5_ГБ_УД": "slot_3",
+        "АП_НП_ОУ_Ульяновск_ВШ6_ГБ": "slot_4",
+        "АП_НП_ОУ_Ульяновск_ВШ9_ПР_КиHR": "slot_5",
+        "АП_НП_ОУ_Москва_ВШ10_БУХ_УД": "slot_6"
+    }
+}
