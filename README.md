@@ -36,6 +36,6 @@ Google Apps Script + таблица «победи дракона» — см. [a
 
 ## Персонажи и фон
 
-Все 30 героев и фон — открытые (CC0) материалы; источники и как перерисовать — `game/tools/render-characters/README.md`,
+Все 30 героев и фон — открытые (CC0) материалы; источники и как пересобрать — `game/assets-source/characters/LICENSES.md`,
 `game/assets-source/scene/LICENSES.md`. Дракон и гора золота — из московской версии.
 Подробности и принятые решения — [docs/tech.md](docs/tech.md).

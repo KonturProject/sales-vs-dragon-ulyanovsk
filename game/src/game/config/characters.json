@@ -2,183 +2,183 @@
     "characters": [
         {
             "id": "knight",
-            "name": "Рыцарь",
+            "name": "Рыцарь Пламени",
             "color": "#f29b43",
-            "hits": 3
+            "hits": 5
         },
         {
-            "id": "golden_knight",
+            "id": "knight_steel",
+            "name": "Стальной рыцарь",
+            "color": "#439bf2",
+            "hits": 5
+        },
+        {
+            "id": "knight_forest",
+            "name": "Лесной рыцарь",
+            "color": "#43f243",
+            "hits": 5
+        },
+        {
+            "id": "knight_night",
+            "name": "Рыцарь Ночи",
+            "color": "#f243f2",
+            "hits": 5
+        },
+        {
+            "id": "knight_gold",
             "name": "Золотой рыцарь",
             "color": "#f2f243",
-            "hits": 3
+            "hits": 5
         },
         {
-            "id": "golden_lady",
-            "name": "Золотая воительница",
-            "color": "#f2f243",
-            "hits": 3
+            "id": "hooded_blade",
+            "name": "Изумрудный клинок",
+            "color": "#439bf2",
+            "hits": 5
         },
         {
-            "id": "viking",
-            "name": "Викинг",
+            "id": "hooded_blade_red",
+            "name": "Багровый клинок",
+            "color": "#9bf243",
+            "hits": 5
+        },
+        {
+            "id": "hooded_blade_ice",
+            "name": "Ледяной клинок",
+            "color": "#f2439b",
+            "hits": 5
+        },
+        {
+            "id": "hooded_blade_gold",
+            "name": "Золотой клинок",
+            "color": "#43f29b",
+            "hits": 5
+        },
+        {
+            "id": "rogue",
+            "name": "Разбойник",
+            "color": "#439bf2",
+            "hits": 5
+        },
+        {
+            "id": "rogue_red",
+            "name": "Алый разбойник",
             "color": "#f29b43",
-            "hits": 3
+            "hits": 5
         },
         {
-            "id": "valkyrie",
-            "name": "Валькирия",
+            "id": "rogue_green",
+            "name": "Лесной разбойник",
+            "color": "#43f243",
+            "hits": 5
+        },
+        {
+            "id": "rogue_violet",
+            "name": "Сумеречный разбойник",
+            "color": "#9b43f2",
+            "hits": 5
+        },
+        {
+            "id": "mage",
+            "name": "Чародейка",
+            "color": "#9b43f2",
+            "hits": 5
+        },
+        {
+            "id": "mage_azure",
+            "name": "Чародейка льда",
+            "color": "#439bf2",
+            "hits": 5
+        },
+        {
+            "id": "mage_crimson",
+            "name": "Багровая чародейка",
+            "color": "#f2439b",
+            "hits": 5
+        },
+        {
+            "id": "mage_emerald",
+            "name": "Изумрудная чародейка",
+            "color": "#43f243",
+            "hits": 5
+        },
+        {
+            "id": "druid",
+            "name": "Друид",
+            "color": "#9bf243",
+            "hits": 5
+        },
+        {
+            "id": "druid_autumn",
+            "name": "Осенний друид",
+            "color": "#f24343",
+            "hits": 5
+        },
+        {
+            "id": "druid_frost",
+            "name": "Друид льда",
+            "color": "#43f2f2",
+            "hits": 5
+        },
+        {
+            "id": "druid_dusk",
+            "name": "Друид сумерек",
+            "color": "#9b43f2",
+            "hits": 5
+        },
+        {
+            "id": "alchemist",
+            "name": "Алхимик",
             "color": "#f29b43",
-            "hits": 3
+            "hits": 5
         },
         {
-            "id": "wizard",
-            "name": "Волшебник",
+            "id": "alchemist_green",
+            "name": "Ядовитый алхимик",
+            "color": "#4343f2",
+            "hits": 5
+        },
+        {
+            "id": "alchemist_red",
+            "name": "Огненный алхимик",
             "color": "#f29b43",
-            "hits": 3
+            "hits": 5
         },
         {
-            "id": "witch",
-            "name": "Ведьма",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "elf",
-            "name": "Эльф",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "goblin",
-            "name": "Гоблин",
-            "color": "#f2f243",
-            "hits": 3
-        },
-        {
-            "id": "pirate",
-            "name": "Пират",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "pirate_girl",
-            "name": "Пиратка",
-            "color": "#f29b43",
-            "hits": 3
+            "id": "alchemist_blue",
+            "name": "Алхимик бури",
+            "color": "#f24343",
+            "hits": 5
         },
         {
             "id": "ninja",
             "name": "Ниндзя",
+            "color": "#43f29b",
+            "hits": 5
+        },
+        {
+            "id": "ninja_red",
+            "name": "Красный ниндзя",
             "color": "#f29b43",
-            "hits": 3
+            "hits": 5
         },
         {
-            "id": "kunoichi",
-            "name": "Куноичи",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "samurai",
-            "name": "Самурай",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "sakura",
-            "name": "Сакура",
-            "color": "#f2439b",
-            "hits": 3
-        },
-        {
-            "id": "cowboy",
-            "name": "Ковбой",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "cowgirl",
-            "name": "Ковбойша",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "chef",
-            "name": "Повар",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "doctor",
-            "name": "Доктор",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "doctor_girl",
-            "name": "Врач",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "soldier",
-            "name": "Солдат",
-            "color": "#e0524a",
-            "hits": 3
-        },
-        {
-            "id": "soldier_girl",
-            "name": "Сержант",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "businessman",
-            "name": "Бизнесмен",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "businesswoman",
-            "name": "Бизнес-леди",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "builder",
-            "name": "Строитель",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "builder_girl",
-            "name": "Прораб",
-            "color": "#f2f243",
-            "hits": 3
-        },
-        {
-            "id": "zombie",
-            "name": "Зомби",
+            "id": "ninja_blue",
+            "name": "Синий ниндзя",
             "color": "#9b43f2",
-            "hits": 3
+            "hits": 5
         },
         {
-            "id": "cow",
-            "name": "Корова",
-            "color": "#f29b43",
-            "hits": 3
+            "id": "ninja_gold",
+            "name": "Золотой ниндзя",
+            "color": "#f2f243",
+            "hits": 5
         },
         {
-            "id": "pug",
-            "name": "Мопс",
-            "color": "#f29b43",
-            "hits": 3
-        },
-        {
-            "id": "gentleman",
-            "name": "Джентльмен",
-            "color": "#f29b43",
-            "hits": 3
+            "id": "ninja_violet",
+            "name": "Ниндзя теней",
+            "color": "#f2439b",
+            "hits": 5
         }
     ]
 }

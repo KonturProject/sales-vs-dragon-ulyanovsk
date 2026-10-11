@@ -63,8 +63,8 @@ export const HERO = {
         { x: 632, y: 508, scale: 0.92 },
         { x: 730, y: 578, scale: 1 },
     ],
-    /** All hero textures are 2x their on-screen size (see tools/build-sprites.py). */
-    TEXTURE_SCALE: 0.5,
+    /** Hero textures are 1/0.75 times their on-screen size (see tools/build-characters.py). */
+    TEXTURE_SCALE: 0.75,
     HIT_STAGGER_MS: 300,
     ...HIT_PHASES,
     /** From the sale event to the blow landing on the dragon — hit effects, sound and the dragon's reaction key off this. */

@@ -1,0 +1,51 @@
+{
+    "_comment": "Heroes built from the CC0 AutoSprite free library (https://www.autosprite.io/free-sprite-sheets). `base` = a character's sprite sheets (zip name = key); `variants` = the selectable heroes (the original plus colour variants of it). Strike frames: the run cycle (or the real attack animation) in order, the last frame is the blow — for run cycles it is chosen automatically as the frame that reaches furthest forward.",
+    "zipUrlTemplate": "https://pub-63ab27389d044634a73e89c1a0c6d4a6.r2.dev/free-library/sprite-sheets/{key}/{key}.zip",
+    "base": {
+        "knight": {"idle": "knight-idle", "run": "knight-run"},
+        "hooded-blade": {"idle": "hooded-blade-idle", "attack": "hooded-blade-attack", "strike": [2, 9, 14, 15, 16]},
+        "twin-dagger-rogue": {"idle": "twin-dagger-rogue-idle", "run": "twin-dagger-rogue-run"},
+        "arcane-mage": {"idle": "arcane-mage-idle", "run": "arcane-mage-run"},
+        "forest-druid": {"idle": "forest-druid-idle", "run": "forest-druid-run"},
+        "alchemist": {"idle": "alchemist-idle", "run": "alchemist-run"},
+        "ninja": {"idle": "ninja-idle-right", "run": "ninja-run-right"}
+    },
+    "variants": [
+        {"id": "knight", "base": "knight", "name": "Рыцарь Пламени"},
+        {"id": "knight_steel", "base": "knight", "name": "Стальной рыцарь", "hue": 0.57, "sat": 0.55, "val": 1.0},
+        {"id": "knight_forest", "base": "knight", "name": "Лесной рыцарь", "hue": 0.30, "sat": 0.8, "val": 0.95},
+        {"id": "knight_night", "base": "knight", "name": "Рыцарь Ночи", "hue": 0.77, "sat": 0.75, "val": 0.9},
+        {"id": "knight_gold", "base": "knight", "name": "Золотой рыцарь", "hue": 0.12, "sat": 0.85, "val": 1.08},
+
+        {"id": "hooded_blade", "base": "hooded-blade", "name": "Изумрудный клинок"},
+        {"id": "hooded_blade_red", "base": "hooded-blade", "name": "Багровый клинок", "hue": 0.67, "sat": 1.0, "val": 1.0, "protect_skin": true},
+        {"id": "hooded_blade_ice", "base": "hooded-blade", "name": "Ледяной клинок", "hue": 0.30, "sat": 0.9, "val": 1.05, "protect_skin": true},
+        {"id": "hooded_blade_gold", "base": "hooded-blade", "name": "Золотой клинок", "hue": -0.20, "sat": 1.0, "val": 1.05, "protect_skin": true},
+
+        {"id": "rogue", "base": "twin-dagger-rogue", "name": "Разбойник"},
+        {"id": "rogue_red", "base": "twin-dagger-rogue", "name": "Алый разбойник", "hue": 0.45, "sat": 1.0, "val": 1.0, "protect_skin": true},
+        {"id": "rogue_green", "base": "twin-dagger-rogue", "name": "Лесной разбойник", "hue": -0.27, "sat": 0.95, "val": 1.0, "protect_skin": true},
+        {"id": "rogue_violet", "base": "twin-dagger-rogue", "name": "Сумеречный разбойник", "hue": 0.18, "sat": 0.95, "val": 1.0, "protect_skin": true},
+
+        {"id": "mage", "base": "arcane-mage", "name": "Чародейка"},
+        {"id": "mage_azure", "base": "arcane-mage", "name": "Чародейка льда", "hue": -0.16, "sat": 1.0, "val": 1.0, "protect_skin": true},
+        {"id": "mage_crimson", "base": "arcane-mage", "name": "Багровая чародейка", "hue": 0.21, "sat": 1.05, "val": 1.0, "protect_skin": true},
+        {"id": "mage_emerald", "base": "arcane-mage", "name": "Изумрудная чародейка", "hue": -0.40, "sat": 1.0, "val": 1.0, "protect_skin": true},
+
+        {"id": "druid", "base": "forest-druid", "name": "Друид"},
+        {"id": "druid_autumn", "base": "forest-druid", "name": "Осенний друид", "hue": -0.19, "sat": 1.0, "val": 1.0, "protect_skin": true},
+        {"id": "druid_frost", "base": "forest-druid", "name": "Друид льда", "hue": 0.28, "sat": 0.9, "val": 1.05, "protect_skin": true},
+        {"id": "druid_dusk", "base": "forest-druid", "name": "Друид сумерек", "hue": 0.50, "sat": 0.9, "val": 1.0, "protect_skin": true},
+
+        {"id": "alchemist", "base": "alchemist", "name": "Алхимик"},
+        {"id": "alchemist_green", "base": "alchemist", "name": "Ядовитый алхимик", "hue": -0.42, "sat": 1.0, "val": 1.0, "protect_skin": true},
+        {"id": "alchemist_red", "base": "alchemist", "name": "Огненный алхимик", "hue": 0.25, "sat": 1.0, "val": 1.0, "protect_skin": true},
+        {"id": "alchemist_blue", "base": "alchemist", "name": "Алхимик бури", "hue": -0.15, "sat": 1.0, "val": 1.0, "protect_skin": true},
+
+        {"id": "ninja", "base": "ninja", "name": "Ниндзя"},
+        {"id": "ninja_red", "base": "ninja", "name": "Красный ниндзя", "hue": 0.62, "sat": 1.0, "val": 1.0},
+        {"id": "ninja_blue", "base": "ninja", "name": "Синий ниндзя", "hue": 0.28, "sat": 1.0, "val": 1.0},
+        {"id": "ninja_gold", "base": "ninja", "name": "Золотой ниндзя", "hue": -0.25, "sat": 1.0, "val": 1.05},
+        {"id": "ninja_violet", "base": "ninja", "name": "Ниндзя теней", "hue": 0.45, "sat": 0.8, "val": 0.9}
+    ]
+}
