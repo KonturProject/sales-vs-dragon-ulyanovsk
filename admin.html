@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Админка — Победи дракона</title>
+  <script type="module" crossorigin src="./assets/admin-DLILnhD3.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/ropMapping-DYbXKFcS.js">
+  <link rel="stylesheet" crossorigin href="./assets/admin-DUIQiAsp.css">
+</head>
+<body>
+    <div class="scene-glow"></div>
+    <div class="admin-card">
+        <div class="eyebrow">Победи дракона · Ульяновск</div>
+        <h1 id="title">Панель управления</h1>
+
+        <form id="pin-form">
+            <label for="pin">PIN-код</label>
+            <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••••" required />
+            <button type="submit">Войти<span class="btn-arrow">→</span></button>
+        </form>
+
+        <div id="panel" hidden>
+            <nav class="tabs" role="tablist">
+                <button type="button" class="tab-btn active" data-tab="plan" role="tab">План</button>
+                <button type="button" class="tab-btn" data-tab="table" role="tab">Таблица</button>
+                <button type="button" class="tab-btn" data-tab="add" role="tab">Внести оплату</button>
+                <button type="button" class="tab-btn" data-tab="heroes" role="tab">Герои</button>
+                <button type="button" class="tab-btn" data-tab="anim" role="tab">Анимации</button>
+                <button type="button" class="tab-btn" data-tab="pin" role="tab">PIN-код</button>
+            </nav>
+
+            <!-- План -->
+            <section class="tab" data-tab-panel="plan">
+                <p id="current-status" class="current-status" hidden></p>
+                <form id="plan-form">
+                    <label for="plan">Недельный план, ₽</label>
+                    <input id="plan" name="plan" type="number" min="0" step="1000" placeholder="5000000" required />
+                    <button type="submit">Сохранить план<span class="btn-arrow">→</span></button>
+                </form>
+            </section>
+
+            <!-- Таблица -->
+            <section class="tab" data-tab-panel="table" hidden>
+                <div class="toolbar">
+                    <button type="button" id="table-refresh" class="ghost">Обновить</button>
+                    <span id="table-meta" class="meta"></span>
+                </div>
+                <div id="table-summary" class="chips"></div>
+                <div class="table-wrap">
+                    <table id="sales-table">
+                        <thead><tr><th>Строка</th><th>Дата</th><th>Отдел</th><th class="num">Сумма, ₽</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Внести оплату -->
+            <section class="tab" data-tab-panel="add" hidden>
+                <form id="add-form">
+                    <label for="add-rop">Отдел</label>
+                    <select id="add-rop" required></select>
+                    <label for="add-amount">Сумма, ₽</label>
+                    <input id="add-amount" type="number" min="1" step="any" placeholder="150000" required />
+                    <label for="add-date">Дата и время <span class="optional">(необязательно — по умолчанию сейчас)</span></label>
+                    <input id="add-date" type="datetime-local" />
+                    <button type="submit">Внести оплату<span class="btn-arrow">→</span></button>
+                </form>
+                <p class="hint">Это настоящая запись в листе «Sales» таблицы «победи дракона»: сдвинет итоги недели, а на экранах герой отдела ударит по дракону (если вносите «сейчас»).</p>
+            </section>
+
+            <!-- Герои -->
+            <section class="tab" data-tab-panel="heroes" hidden>
+                <p class="hint">Кто стоит на экране за каждую группу и кто лидер филиала. Выберите из списка (или нажмите на героя в галерее ниже — он встанет на выбранное место) и сохраните: экраны подхватят замену в течение ~15 секунд. Таблицу и суммы это не затрагивает.</p>
+                <div id="roster-rows" class="roster-rows"></div>
+                <button type="button" id="roster-save" class="primary-btn">Сохранить героев<span class="btn-arrow">→</span></button>
+                <h2>Все герои</h2>
+                <div id="roster-gallery" class="gallery"></div>
+            </section>
+
+            <!-- Анимации -->
+            <section class="tab" data-tab-panel="anim" hidden>
+                <p class="hint">Анимации только показываются на экранах — данные и таблицу они не меняют. Экраны подхватывают команду при очередном опросе, обычно в течение 15 секунд.</p>
+
+                <h2>Удар отдела</h2>
+                <div class="inline-field">
+                    <label for="anim-amount">Сумма в подписи, ₽</label>
+                    <input id="anim-amount" type="number" min="1" step="any" value="50000" />
+                </div>
+                <div id="anim-hits" class="btn-grid"></div>
+
+                <h2>Персонажи</h2>
+                <div class="inline-field">
+                    <label for="anim-hero">Кто</label>
+                    <select id="anim-hero"></select>
+                </div>
+                <div class="btn-grid">
+                    <button type="button" class="anim-btn" data-cmd="fall" data-mode="fall">Упасть</button>
+                    <button type="button" class="anim-btn" data-cmd="fall" data-mode="doze">Заснуть</button>
+                    <button type="button" class="anim-btn" data-cmd="wake">Поднять всех</button>
+                </div>
+
+                <h2>Дракон</h2>
+                <div class="btn-grid">
+                    <button type="button" class="anim-btn" data-cmd="growl">Рычание и дрожь</button>
+                </div>
+
+                <h2>Праздник</h2>
+                <div class="btn-grid">
+                    <button type="button" class="anim-btn" data-cmd="confetti">Конфетти</button>
+                    <button type="button" class="anim-btn" data-cmd="celebrate">Все празднуют</button>
+                </div>
+            </section>
+
+            <!-- PIN -->
+            <section class="tab" data-tab-panel="pin" hidden>
+                <form id="pin-change-form">
+                    <label for="pin-old">Текущий PIN-код</label>
+                    <input id="pin-old" type="password" inputmode="numeric" autocomplete="off" required />
+                    <label for="pin-new">Новый PIN-код <span class="optional">(4–12 цифр)</span></label>
+                    <input id="pin-new" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4,12}" required />
+                    <label for="pin-new2">Новый PIN-код ещё раз</label>
+                    <input id="pin-new2" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4,12}" required />
+                    <button type="submit">Сменить PIN<span class="btn-arrow">→</span></button>
+                </form>
+                <p class="hint">После смены прежний PIN перестанет работать. После нескольких неверных вводов подряд вход блокируется на 10 минут.</p>
+            </section>
+
+            <button type="button" id="logout" class="ghost logout">Выйти</button>
+        </div>
+
+        <p id="status" role="status"></p>
+    </div>
+
+</body>
+</html>

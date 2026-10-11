@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-ssr
+*.local
+
+# Claude Code tooling artifacts — not part of the game itself
+.claude/
+.agents/
+skills-lock.json
+
+# local helper output
+npm-ci.log
+__pycache__/
+*.pyc
