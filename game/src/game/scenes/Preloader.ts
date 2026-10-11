@@ -1,6 +1,6 @@
 import { Scene, Display, Loader, Textures } from 'phaser';
 import { RosterConfig } from '../systems/RosterConfig';
-import { characterTextureKeys, fileFor } from '../systems/CharacterLoader';
+import { queueCharacter } from '../systems/CharacterLoader';
 import { DRAGON, GAME } from '../core/Constants';
 import { fitCameraToGame } from '../core/Render';
 
@@ -32,9 +32,7 @@ export class Preloader extends Scene {
             this.load.image(`dragon_heads${heads}`, `dragon_heads${heads}.png`);
         }
         // Only the characters currently on stage; the admin can swap them later (systems/CharacterLoader.ts).
-        for (const hero of RosterConfig.heroes) {
-            for (const key of characterTextureKeys(hero)) this.load.image(key, fileFor(key));
-        }
+        for (const hero of RosterConfig.heroes) queueCharacter(this.load, hero, () => false);
     }
 
     create() {
@@ -95,9 +93,9 @@ export class Preloader extends Scene {
     private onLoadError(key: string) {
         if (this.textures.exists(key)) return; // real file already loaded fine elsewhere
 
-        // Attack poses are optional variety (HeroSprite checks texture existence
+        // Attack poses and the idle strip are optional (HeroSprite checks texture existence
         // before using them), so a missing one gets no placeholder.
-        if (/_hit\d+$/.test(key)) return;
+        if (/_(hit\d+|idle)$/.test(key)) return;
 
         const g = this.make.graphics({ x: 0, y: 0 });
 

@@ -9,8 +9,9 @@ Per hero: every frame is cropped to its bounding box, padded so that the figure'
 is the middle of the texture and the standing frame's feet are the bottom edge (so swapping the strike frame in never
 makes the hero jump), and all frames of one hero get ONE scale — the standing figure is TARGET_H texture px tall (the game
 draws these textures at HERO.TEXTURE_SCALE = 0.75 -> ~215 px on screen). Colour variants are the same frames with the hue
-turned (skin tones can be protected). Writes game/public/assets/sprites/chars/<id>.png, <id>_hit1..N.png and
-game/src/game/config/characters.json (id, Russian name, swatch colour, number of strike frames).
+turned (skin tones can be protected). Writes game/public/assets/sprites/chars/<id>.png (standing), <id>_hit1..N.png (strike frames), <id>_idle.png (a strip of
+IDLE_FRAMES equal cells: the breathing loop) and game/src/game/config/characters.json (id, Russian name, swatch colour,
+number of strike frames, size of the idle strip).
 """
 import colorsys
 import json
@@ -28,6 +29,7 @@ CONFIG = os.path.join(GAME, 'src', 'game', 'config', 'characters.json')
 
 TARGET_H = 290          # standing figure height, texture px
 CYCLE_FRAMES = 4        # run-cycle frames shown during the dash, before the blow frame
+IDLE_FRAMES = 8         # frames of the standing "breathing" loop (a strip of equal cells, one PNG per hero)
 PALETTE = ['#e0524a', '#e8883a', '#e8c53a', '#7ac943', '#3fc2a0', '#45a5e5', '#6f7de8', '#b26fe0', '#e86fb0', '#9aa7b4']
 
 
@@ -108,6 +110,11 @@ def dominant_color(img, fallback):
     return '#%02x%02x%02x' % (int(r * 255), int(g * 255), int(b * 255))
 
 
+def save_png(im, path):
+    """Palette PNG (256 colours, alpha kept): pixel art loses nothing visible and the files get ~4x smaller."""
+    im.quantize(colors=256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE).save(path, optimize=True)
+
+
 def cut(im, centre_x, floor_y, scale):
     b = bbox(im)
     left, right = centre_x - b[0], b[2] - centre_x
@@ -121,7 +128,9 @@ def cut(im, centre_x, floor_y, scale):
 
 def base_frames(root, key, spec):
     folder = os.path.join(root, key, 'x')
-    idle = sheet_frames(folder, spec['idle'])[0]
+    idle_all = sheet_frames(folder, spec['idle'])
+    idle = idle_all[0]
+    loop = [idle_all[round(i * len(idle_all) / IDLE_FRAMES) % len(idle_all)] for i in range(IDLE_FRAMES)]
     if 'attack' in spec:
         atk = sheet_frames(folder, spec['attack'])
         strike = [atk[i] for i in spec['strike']]
@@ -130,7 +139,7 @@ def base_frames(root, key, spec):
         blow = max(range(len(run)), key=lambda i: forward_reach(run[i]))
         picks = [round(i * len(run) / CYCLE_FRAMES) % len(run) for i in range(CYCLE_FRAMES)]
         strike = [run[i] for i in picks] + [run[blow]]
-    return idle, strike
+    return idle, strike, loop
 
 
 def main():
@@ -144,18 +153,28 @@ def main():
 
     result, rows = [], []
     for i, v in enumerate(spec['variants']):
-        idle, strike = bases[v['base']]
+        idle, strike, loop = bases[v['base']]
         frames = [idle] + strike
         if 'hue' in v:
-            frames = [recolor(f, v['hue'], v.get('sat', 1.0), v.get('val', 1.0), v.get('protect_skin', False)) for f in frames]
+            tint = lambda f: recolor(f, v['hue'], v.get('sat', 1.0), v.get('val', 1.0), v.get('protect_skin', False))
+            frames = [tint(f) for f in frames]
+            loop = [tint(f) for f in loop]
         bb = bbox(frames[0])
         cx, floor = (bb[0] + bb[2]) / 2, bb[3]
         scale = TARGET_H / (floor - bb[1])
         outs = [cut(f, cx, floor, scale) for f in frames]
-        outs[0].save(os.path.join(OUT, v['id'] + '.png'), optimize=True)
+        save_png(outs[0], os.path.join(OUT, v['id'] + '.png'))
         for k, im in enumerate(outs[1:], 1):
-            im.save(os.path.join(OUT, '%s_hit%d.png' % (v['id'], k)), optimize=True)
-        result.append({'id': v['id'], 'name': v['name'], 'color': dominant_color(outs[0], PALETTE[i % len(PALETTE)]), 'hits': len(outs) - 1})
+            save_png(im, os.path.join(OUT, '%s_hit%d.png' % (v['id'], k)))
+        # the breathing loop: equal cells (the largest frame), every frame centred on the feet and standing on the same floor
+        cells = [cut(f, cx, floor, scale) for f in loop]
+        cw, ch = max(c.width for c in cells), max(c.height for c in cells)
+        strip = Image.new('RGBA', (cw * len(cells), ch), (0, 0, 0, 0))
+        for k, c in enumerate(cells):
+            strip.alpha_composite(c, (k * cw + (cw - c.width) // 2, ch - c.height))
+        save_png(strip, os.path.join(OUT, v['id'] + '_idle.png'))
+        result.append({'id': v['id'], 'name': v['name'], 'color': dominant_color(outs[0], PALETTE[i % len(PALETTE)]),
+                       'hits': len(outs) - 1, 'idle': {'frames': len(cells), 'width': cw, 'height': ch}})
         rows.append((v['id'], outs))
 
     with open(CONFIG, 'w', encoding='utf-8') as f:

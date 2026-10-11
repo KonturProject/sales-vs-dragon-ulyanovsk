@@ -10,8 +10,10 @@ export interface CharacterDef {
     name: string;
     /** Swatch / hit-flash colour. */
     color: string;
-    /** Number of strike frames `char_<id>_hit1..N` (wind-up first, the blow last). */
+    /** Number of strike frames `char_<id>_hit1..N` (the run cycle first, the blow last). */
     hits: number;
+    /** The breathing loop: `char_<id>_idle` is a strip of `frames` equal cells of `width` × `height` px. */
+    idle?: { frames: number; width: number; height: number };
 }
 
 /** What a slot (a department, or the branch lead) needs to draw: the standing texture, the strike frames, the colour. */
@@ -22,6 +24,7 @@ export interface HeroDef {
     color: string;
     lead: boolean;
     hits: number;
+    idle?: { frames: number; width: number; height: number };
 }
 
 export type Selection = Record<string, string>;
@@ -76,7 +79,7 @@ let selection: Selection = readSaved() ?? sanitise(null);
 
 function def(slot: HeroSlug): HeroDef {
     const ch = characters.find(c => c.id === selection[slot]) ?? characters[0];
-    return { slug: slot, characterId: ch.id, sprite: `char_${ch.id}`, color: ch.color, lead: slot === LEAD_SLOT, hits: ch.hits };
+    return { slug: slot, characterId: ch.id, sprite: `char_${ch.id}`, color: ch.color, lead: slot === LEAD_SLOT, hits: ch.hits, idle: ch.idle };
 }
 
 export const RosterConfig = {

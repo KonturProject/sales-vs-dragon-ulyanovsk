@@ -111,6 +111,17 @@ export const IDLE = {
     SNORE_MAX_MS: 40_000,
 } as const;
 
+/**
+ * The standing heroes breathe: a loop of a few frames, one step per FRAME_MS. A frame swap costs nothing at the
+ * idle frame rate (the game redraws at 10 fps anyway), unlike an endless tween, which would hold the ambient rate.
+ */
+export const IDLE_ANIM = {
+    FRAME_MS: 250,
+    /** The branch lead dashes this far toward the heroes when it cheers a sale, and comes back. */
+    LEAD_DASH_PX: 70,
+    LEAD_DASH_MS: 300,
+} as const;
+
 export const HUD = {
     BAR_X: 32,
     BAR_Y: 22,

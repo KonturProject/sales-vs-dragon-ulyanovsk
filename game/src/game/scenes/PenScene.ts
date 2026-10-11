@@ -5,7 +5,7 @@ import {
 } from '../core/EventBus';
 import { GameState } from '../core/GameState';
 import { fitCameraToGame } from '../core/Render';
-import { DRAGON, GAME, HERO, HUD } from '../core/Constants';
+import { DRAGON, GAME, HERO, HUD, IDLE_ANIM } from '../core/Constants';
 import { RosterConfig, HeroDef } from '../systems/RosterConfig';
 import { loadCharacters } from '../systems/CharacterLoader';
 import { DataPollingService } from '../systems/DataPollingService';
@@ -53,10 +53,19 @@ export class PenScene extends Scene {
         });
 
         const leadDef = RosterConfig.lead;
-        this.lead = new LeadSprite(this, HERO.LEAD.x, HERO.LEAD.y, leadDef.sprite, HERO.LEAD.scale);
+        this.lead = new LeadSprite(this, HERO.LEAD.x, HERO.LEAD.y, leadDef, HERO.LEAD.scale);
         this.lead.setDepth(HERO.LEAD.y);
 
         startIdleSway(this, [...this.heroes.values(), ...(this.lead ? [this.lead] : [])]);
+        // One shared timer steps everyone's breathing loop (a frame swap, not a tween: the idle frame rate stays low).
+        this.time.addEvent({
+            delay: IDLE_ANIM.FRAME_MS,
+            loop: true,
+            callback: () => {
+                this.heroes.forEach(hero => hero.idleStep());
+                this.lead?.idleStep();
+            },
+        });
         this.mood = new IdleMood(this, [...this.heroes.values()], this.dragon, this.lead ? [this.lead.span()] : []);
 
         EventBus.on(GameEvents.MONEY_IN, this.onMoneyIn, this);
@@ -92,7 +101,7 @@ export class PenScene extends Scene {
         const defs = payload.slots.map(slot => RosterConfig.heroDef(slot as never)).filter((d): d is HeroDef => !!d);
         loadCharacters(this, defs, () => {
             for (const def of defs) {
-                if (def.lead) this.lead?.setCharacter(def.sprite);
+                if (def.lead) this.lead?.setCharacter(def);
                 else this.heroes.get(def.slug)?.setCharacter(def);
             }
         });

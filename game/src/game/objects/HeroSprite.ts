@@ -3,6 +3,7 @@ import { HeroDef } from '../systems/RosterConfig';
 import { FX, GAME, HERO } from '../core/Constants';
 import { emitBurst, emitSparkles, emitShockwaveRing, emitComicText, Swayable } from '../systems/Fx';
 import { AudioSystem } from '../systems/Audio';
+import { idleKeyOf } from '../systems/CharacterLoader';
 
 /**
  * A department mascot. The sprite is anchored at its feet (bottom-center) and
@@ -33,6 +34,10 @@ export class HeroSprite extends GameObjects.Container implements Swayable {
     /** Strike frames in order: wind-up first, the blow (weapon fully out) last. */
     private hitPoses: string[] = [];
     private characterId: string;
+    /** The breathing loop (a spritesheet strip), stepped by PenScene's shared timer; null if the character has none. */
+    private idleKey: string | null = null;
+    private idleFrames = 0;
+    private idleFrame = 0;
 
     constructor(scene: Scene, x: number, y: number, def: HeroDef, scaleMul = 1) {
         super(scene, x, y);
@@ -44,6 +49,7 @@ export class HeroSprite extends GameObjects.Container implements Swayable {
         this.defaultTexture = def.sprite;
         this.characterId = def.characterId;
         this.collectHitPoses(def);
+        this.setupIdle(def);
 
         this.sprite = scene.add.image(0, 0, def.sprite).setOrigin(0.5, 1);
         this.add(this.sprite);
@@ -59,6 +65,19 @@ export class HeroSprite extends GameObjects.Container implements Swayable {
             const key = `${def.sprite}_hit${i}`;
             if (this.scene.textures.exists(key)) this.hitPoses.push(key);
         }
+    }
+
+    private setupIdle(def: HeroDef) {
+        this.idleKey = def.idle && this.scene.textures.exists(idleKeyOf(def)) ? idleKeyOf(def) : null;
+        this.idleFrames = def.idle?.frames ?? 0;
+        this.idleFrame = this.idleFrames > 0 ? Math.floor(Math.random() * this.idleFrames) : 0; // heroes do not breathe in step
+    }
+
+    /** One step of the breathing loop; only while standing at ease (not striking, not asleep, not mid-swap). */
+    idleStep() {
+        if (!this.idleKey || this.busy || this.posture !== 'standing') return;
+        this.idleFrame = (this.idleFrame + 1) % this.idleFrames;
+        this.sprite.setTexture(this.idleKey, this.idleFrame);
     }
 
     /**
@@ -77,6 +96,7 @@ export class HeroSprite extends GameObjects.Container implements Swayable {
         this.tintColor = Display.Color.HexStringToColor(def.color).color;
         this.defaultTexture = def.sprite;
         this.collectHitPoses(def);
+        this.setupIdle(def);
         this.sprite.setTexture(def.sprite).setFlipX(false);
 
         const s = this.baseScale;
@@ -121,6 +141,7 @@ export class HeroSprite extends GameObjects.Container implements Swayable {
         this.busy = true;
         this.posture = 'down';
         this.lean = dir;
+        this.sprite.setTexture(this.defaultTexture);
         this.scene.tweens.killTweensOf(this);
 
         const lying = dir * 90;
@@ -155,6 +176,7 @@ export class HeroSprite extends GameObjects.Container implements Swayable {
         this.busy = true;
         this.posture = 'dozing';
         this.lean = dir;
+        this.sprite.setTexture(this.defaultTexture);
         this.scene.tweens.killTweensOf(this);
 
         const s = this.baseScale;
