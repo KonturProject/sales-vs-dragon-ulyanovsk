@@ -9,7 +9,7 @@ Per hero: every frame is cropped to its bounding box, padded so that the figure'
 is the middle of the texture and the standing frame's feet are the bottom edge (so swapping the strike frame in never
 makes the hero jump), and all frames of one hero get ONE scale — the standing figure is TARGET_H texture px tall (the game
 draws these textures at HERO.TEXTURE_SCALE = 0.75 -> ~215 px on screen). Colour variants are the same frames with the hue
-turned (skin tones can be protected). Writes game/public/assets/sprites/chars/<id>.png (standing), <id>_hit1..N.png (strike frames), <id>_idle.png (a strip of
+turned (skin tones can be protected). Writes game/public/assets/sprites/chars/<id>.png (standing), <id>_hit1..N.png (strike frames), <id>_idle.png (a grid of
 IDLE_FRAMES equal cells: the breathing loop) and game/src/game/config/characters.json (id, Russian name, swatch colour,
 number of strike frames, size of the idle strip).
 """
@@ -29,7 +29,8 @@ CONFIG = os.path.join(GAME, 'src', 'game', 'config', 'characters.json')
 
 TARGET_H = 290          # standing figure height, texture px
 CYCLE_FRAMES = 4        # run-cycle frames shown during the dash, before the blow frame
-IDLE_FRAMES = 8         # frames of the standing "breathing" loop (a strip of equal cells, one PNG per hero)
+IDLE_FRAMES = 12        # frames of the standing "breathing" loop (a grid of equal cells, one PNG per hero)
+IDLE_COLUMNS = 4
 PALETTE = ['#e0524a', '#e8883a', '#e8c53a', '#7ac943', '#3fc2a0', '#45a5e5', '#6f7de8', '#b26fe0', '#e86fb0', '#9aa7b4']
 
 
@@ -169,9 +170,10 @@ def main():
         # the breathing loop: equal cells (the largest frame), every frame centred on the feet and standing on the same floor
         cells = [cut(f, cx, floor, scale) for f in loop]
         cw, ch = max(c.width for c in cells), max(c.height for c in cells)
-        strip = Image.new('RGBA', (cw * len(cells), ch), (0, 0, 0, 0))
+        rows_n = -(-len(cells) // IDLE_COLUMNS)
+        strip = Image.new('RGBA', (cw * IDLE_COLUMNS, ch * rows_n), (0, 0, 0, 0))
         for k, c in enumerate(cells):
-            strip.alpha_composite(c, (k * cw + (cw - c.width) // 2, ch - c.height))
+            strip.alpha_composite(c, ((k % IDLE_COLUMNS) * cw + (cw - c.width) // 2, (k // IDLE_COLUMNS) * ch + ch - c.height))
         save_png(strip, os.path.join(OUT, v['id'] + '_idle.png'))
         result.append({'id': v['id'], 'name': v['name'], 'color': dominant_color(outs[0], PALETTE[i % len(PALETTE)]),
                        'hits': len(outs) - 1, 'idle': {'frames': len(cells), 'width': cw, 'height': ch}})

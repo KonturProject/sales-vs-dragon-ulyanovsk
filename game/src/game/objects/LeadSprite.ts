@@ -23,6 +23,8 @@ export class LeadSprite extends GameObjects.Container implements Swayable {
     private idleFrame = 0;
     /** A cheering dash is in progress. */
     private busy = false;
+    /** It is the lead's turn in the live-stand rotation (systems/LiveStand.ts). */
+    private breathing = false;
 
     constructor(scene: Scene, x: number, y: number, def: HeroDef, scaleMul = 1) {
         super(scene, x, y);
@@ -51,9 +53,19 @@ export class LeadSprite extends GameObjects.Container implements Swayable {
         return !this.victoryTween && !this.busy;
     }
 
-    /** One step of the breathing loop (called by PenScene's shared timer). */
+    isAtEase() {
+        return !this.busy && !this.victoryTween && this.idleKey !== null;
+    }
+
+    /** Its turn begins or ends; at the end it returns to the static standing frame. */
+    setBreathing(on: boolean) {
+        this.breathing = on;
+        if (!on && this.isAtEase()) this.sprite.setTexture(this.defaultTexture);
+    }
+
+    /** One step of the breathing loop (called by the live-stand rotation, only on the lead's turn). */
     idleStep() {
-        if (!this.idleKey || this.busy || this.victoryTween) return;
+        if (!this.breathing || !this.idleKey || this.busy || this.victoryTween) return;
         this.idleFrame = (this.idleFrame + 1) % this.idleFrames;
         this.sprite.setTexture(this.idleKey, this.idleFrame);
     }

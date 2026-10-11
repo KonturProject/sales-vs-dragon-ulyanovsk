@@ -38,6 +38,8 @@ export class HeroSprite extends GameObjects.Container implements Swayable {
     private idleKey: string | null = null;
     private idleFrames = 0;
     private idleFrame = 0;
+    /** It is this hero's turn in the live-stand rotation (systems/LiveStand.ts). */
+    private breathing = false;
 
     constructor(scene: Scene, x: number, y: number, def: HeroDef, scaleMul = 1) {
         super(scene, x, y);
@@ -73,9 +75,19 @@ export class HeroSprite extends GameObjects.Container implements Swayable {
         this.idleFrame = this.idleFrames > 0 ? Math.floor(Math.random() * this.idleFrames) : 0; // heroes do not breathe in step
     }
 
-    /** One step of the breathing loop; only while standing at ease (not striking, not asleep, not mid-swap). */
+    isAtEase() {
+        return !this.busy && this.posture === 'standing' && this.idleKey !== null;
+    }
+
+    /** Its turn begins or ends; at the end it returns to the static standing frame. */
+    setBreathing(on: boolean) {
+        this.breathing = on;
+        if (!on && this.isAtEase()) this.sprite.setTexture(this.defaultTexture);
+    }
+
+    /** One step of the breathing loop; only on its turn and only while standing at ease (not striking, not asleep, not mid-swap). */
     idleStep() {
-        if (!this.idleKey || this.busy || this.posture !== 'standing') return;
+        if (!this.breathing || !this.idleKey || this.busy || this.posture !== 'standing') return;
         this.idleFrame = (this.idleFrame + 1) % this.idleFrames;
         this.sprite.setTexture(this.idleKey, this.idleFrame);
     }

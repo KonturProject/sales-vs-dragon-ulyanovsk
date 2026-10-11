@@ -42,6 +42,10 @@ export interface DragonDefeatedPayload {
     delayMs: number;
 }
 
+export interface LiveStandPayload {
+    active: boolean;
+}
+
 /** The admin chose other characters for some slots (slot ids as in HERO_SLUGS). */
 export interface RosterChangedPayload {
     slots: string[];
@@ -62,4 +66,6 @@ export const GameEvents = {
     DRAGON_DEFEATED: 'dragon:defeated',
     ADMIN_COMMAND: 'admin:command',
     ROSTER_CHANGED: 'roster:changed',
+    /** Someone is breathing (the live-stand rotation): the game should draw at least at the ambient frame rate. */
+    LIVE_STAND: 'stand:live',
 } as const;

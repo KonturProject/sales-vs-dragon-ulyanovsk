@@ -5,7 +5,7 @@ import {
 } from '../core/EventBus';
 import { GameState } from '../core/GameState';
 import { fitCameraToGame } from '../core/Render';
-import { DRAGON, GAME, HERO, HUD, IDLE_ANIM } from '../core/Constants';
+import { DRAGON, GAME, HERO, HUD } from '../core/Constants';
 import { RosterConfig, HeroDef } from '../systems/RosterConfig';
 import { loadCharacters } from '../systems/CharacterLoader';
 import { DataPollingService } from '../systems/DataPollingService';
@@ -13,6 +13,7 @@ import { Dragon } from '../objects/Dragon';
 import { HeroSprite } from '../objects/HeroSprite';
 import { LeadSprite } from '../objects/LeadSprite';
 import { IdleMood } from '../systems/IdleMood';
+import { LiveStand } from '../systems/LiveStand';
 import { emitFloatingAmount, startIdleSway } from '../systems/Fx';
 import { AudioSystem } from '../systems/Audio';
 
@@ -57,15 +58,8 @@ export class PenScene extends Scene {
         this.lead.setDepth(HERO.LEAD.y);
 
         startIdleSway(this, [...this.heroes.values(), ...(this.lead ? [this.lead] : [])]);
-        // One shared timer steps everyone's breathing loop (a frame swap, not a tween: the idle frame rate stays low).
-        this.time.addEvent({
-            delay: IDLE_ANIM.FRAME_MS,
-            loop: true,
-            callback: () => {
-                this.heroes.forEach(hero => hero.idleStep());
-                this.lead?.idleStep();
-            },
-        });
+        // The live stand goes round: one of the seven breathes at a time (see systems/LiveStand.ts).
+        new LiveStand(this, [...this.heroes.values(), ...(this.lead ? [this.lead] : [])]);
         this.mood = new IdleMood(this, [...this.heroes.values()], this.dragon, this.lead ? [this.lead.span()] : []);
 
         EventBus.on(GameEvents.MONEY_IN, this.onMoneyIn, this);

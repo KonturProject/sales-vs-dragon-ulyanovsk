@@ -112,11 +112,14 @@ export const IDLE = {
 } as const;
 
 /**
- * The standing heroes breathe: a loop of a few frames, one step per FRAME_MS. A frame swap costs nothing at the
- * idle frame rate (the game redraws at 10 fps anyway), unlike an endless tween, which would hold the ambient rate.
+ * The standing heroes breathe — one at a time, so the picture is never quite still but the weak office laptops
+ * only animate a single figure: each of the seven (six heroes, then the branch lead) gets TURN_MS, then passes
+ * the baton to the next (~5 minutes for the whole round). While someone breathes the game draws at the
+ * "ambient" frame rate (core/PowerSaver.ts) so the loop looks smooth; the loop is a frame swap, one step per FRAME_MS.
  */
 export const IDLE_ANIM = {
-    FRAME_MS: 250,
+    FRAME_MS: 100,
+    TURN_MS: 40_000,
     /** The branch lead dashes this far toward the heroes when it cheers a sale, and comes back. */
     LEAD_DASH_PX: 70,
     LEAD_DASH_MS: 300,

@@ -32,6 +32,8 @@ export class PowerSaver {
     private framesThisSecond = 0;
     private secondStartedAt = performance.now();
     private renderedFps = 0;
+    /** A hero is breathing (the live-stand rotation): draw at the ambient rate even though no tween loops. */
+    private liveStand = false;
 
     constructor(private game: Game) {
         if (!this.hasLimiter()) return; // Phaser started without fps.limit — nothing to tune
@@ -48,6 +50,7 @@ export class PowerSaver {
         EventBus.on(GameEvents.DRAGON_HEAD_LOST, wakeForEvent);
         EventBus.on(GameEvents.DRAGON_DEFEATED, wakeForEvent);
         EventBus.on(GameEvents.ADMIN_COMMAND, wakeForEvent);
+        EventBus.on(GameEvents.LIVE_STAND, (payload: { active: boolean }) => { this.liveStand = payload.active; });
         game.canvas.addEventListener('pointerdown', () => this.wake(INPUT_AWAKE_MS));
     }
 
@@ -95,7 +98,7 @@ export class PowerSaver {
         const motion = this.tweenMotion();
         if (motion === 'finite') this.awakeUntil = Math.max(this.awakeUntil, now + 300);
 
-        const wanted: Mode = now < this.awakeUntil ? 'active' : motion === 'endless' ? 'ambient' : 'idle';
+        const wanted: Mode = now < this.awakeUntil ? 'active' : motion === 'endless' || this.liveStand ? 'ambient' : 'idle';
         if (wanted !== this.mode) this.applyRate(wanted);
     }
 

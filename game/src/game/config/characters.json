@@ -6,7 +6,7 @@
             "color": "#f29b43",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 278,
                 "height": 290
             }
@@ -17,7 +17,7 @@
             "color": "#439bf2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 278,
                 "height": 290
             }
@@ -28,7 +28,7 @@
             "color": "#43f243",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 278,
                 "height": 290
             }
@@ -39,7 +39,7 @@
             "color": "#f243f2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 278,
                 "height": 290
             }
@@ -50,7 +50,7 @@
             "color": "#f2f243",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 278,
                 "height": 290
             }
@@ -61,7 +61,7 @@
             "color": "#439bf2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 214,
                 "height": 293
             }
@@ -72,7 +72,7 @@
             "color": "#9bf243",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 214,
                 "height": 293
             }
@@ -83,7 +83,7 @@
             "color": "#f2439b",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 214,
                 "height": 293
             }
@@ -94,7 +94,7 @@
             "color": "#43f29b",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 214,
                 "height": 293
             }
@@ -105,7 +105,7 @@
             "color": "#439bf2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 335,
                 "height": 291
             }
@@ -116,7 +116,7 @@
             "color": "#f29b43",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 335,
                 "height": 291
             }
@@ -127,7 +127,7 @@
             "color": "#43f243",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 335,
                 "height": 291
             }
@@ -138,7 +138,7 @@
             "color": "#9b43f2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 335,
                 "height": 291
             }
@@ -149,7 +149,7 @@
             "color": "#9b43f2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 269,
                 "height": 293
             }
@@ -160,7 +160,7 @@
             "color": "#439bf2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 269,
                 "height": 293
             }
@@ -171,7 +171,7 @@
             "color": "#f2439b",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 269,
                 "height": 293
             }
@@ -182,7 +182,7 @@
             "color": "#43f243",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 269,
                 "height": 293
             }
@@ -193,7 +193,7 @@
             "color": "#9bf243",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 273,
                 "height": 291
             }
@@ -204,7 +204,7 @@
             "color": "#f24343",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 273,
                 "height": 291
             }
@@ -215,7 +215,7 @@
             "color": "#43f2f2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 273,
                 "height": 291
             }
@@ -226,7 +226,7 @@
             "color": "#9b43f2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 273,
                 "height": 291
             }
@@ -237,7 +237,7 @@
             "color": "#f29b43",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 212,
                 "height": 290
             }
@@ -248,7 +248,7 @@
             "color": "#4343f2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 212,
                 "height": 290
             }
@@ -259,7 +259,7 @@
             "color": "#f29b43",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 212,
                 "height": 290
             }
@@ -270,7 +270,7 @@
             "color": "#f24343",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 212,
                 "height": 290
             }
@@ -281,7 +281,7 @@
             "color": "#43f29b",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 165,
                 "height": 297
             }
@@ -292,7 +292,7 @@
             "color": "#f29b43",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 165,
                 "height": 297
             }
@@ -303,7 +303,7 @@
             "color": "#9b43f2",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 165,
                 "height": 297
             }
@@ -314,7 +314,7 @@
             "color": "#f2f243",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 165,
                 "height": 297
             }
@@ -325,7 +325,7 @@
             "color": "#f2439b",
             "hits": 5,
             "idle": {
-                "frames": 8,
+                "frames": 12,
                 "width": 165,
                 "height": 297
             }
