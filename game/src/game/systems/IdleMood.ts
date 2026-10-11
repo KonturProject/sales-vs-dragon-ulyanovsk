@@ -7,7 +7,7 @@ import { Dragon } from '../objects/Dragon';
 type Span = [number, number];
 
 /** Left edge of the gold mountain on the floor — a hero cannot lie down on the pile. */
-const MOUNTAIN_SPAN: Span = [DRAGON.MOUNT_X - 195, DRAGON.MOUNT_X + 195];
+const MOUNTAIN_SPAN: Span = [DRAGON.MOUNT_X - 195 * DRAGON.SCALE, DRAGON.MOUNT_X + 195 * DRAGON.SCALE];
 
 function overlap(a: Span, b: Span): number {
     return Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]));

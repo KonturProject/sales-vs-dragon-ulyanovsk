@@ -24,15 +24,21 @@ export const DAYS = 5;
  */
 export const DRAGON = {
     HEADS_MAX: DAYS,
+    /**
+     * The whole group (mountain + dragon) is drawn at SCALE × its original size and moved right, away from the
+     * heroes — the original layout (MOUNT_X 945, BODY_X 967, BODY_BOTTOM_Y 412, HIT 823/292) scaled about the
+     * mountain's foot and shifted. The textures are at 2× their on-screen size, so they are drawn at 0.5 × SCALE.
+     */
+    SCALE: 0.9,
     /** Mountain of gold (symbol of the plan) — bottom-center anchored. */
-    MOUNT_X: 945,
+    MOUNT_X: 1010,
     MOUNT_BOTTOM_Y: 530,
     /** The dragon body sits on the mountain top — bottom-center anchored, faces left. */
-    BODY_X: 967,
-    BODY_BOTTOM_Y: 412,
+    BODY_X: 1030,
+    BODY_BOTTOM_Y: 424,
     /** Where hero lunges aim (the dragon's chest/front) and hit effects burst. */
-    HIT_X: 823,
-    HIT_Y: 292,
+    HIT_X: 900,
+    HIT_Y: 316,
     /** Stagger between successive head-loss animations when one poll crosses several day plans. */
     HEAD_LOSS_STAGGER_MS: 1100,
     HEAD_LOSS_DURATION_MS: 900,
@@ -45,7 +51,7 @@ export const DRAGON = {
 } as const;
 
 /** Phases of HeroSprite.playHit: wind-up, dash to the dragon, recoil on contact, walk back. */
-const HIT_PHASES = { WINDUP_MS: 160, RUN_MS: 280, RECOIL_MS: 140, RETURN_MS: 420 } as const;
+const HIT_PHASES = { WINDUP_MS: 160, RUN_MS: 330, RECOIL_MS: 140, RETURN_MS: 480 } as const;
 
 export const HERO = {
     /**
@@ -56,12 +62,12 @@ export const HERO = {
      * PenScene sorts depth by `y` so the front row draws over the back row.
      */
     SLOTS: [
-        { x: 240, y: 508, scale: 0.92 },
-        { x: 338, y: 578, scale: 1 },
-        { x: 436, y: 508, scale: 0.92 },
-        { x: 534, y: 578, scale: 1 },
-        { x: 632, y: 508, scale: 0.92 },
-        { x: 730, y: 578, scale: 1 },
+        { x: 195, y: 508, scale: 0.70 },
+        { x: 283, y: 578, scale: 0.77 },
+        { x: 371, y: 508, scale: 0.70 },
+        { x: 459, y: 578, scale: 0.77 },
+        { x: 547, y: 508, scale: 0.70 },
+        { x: 635, y: 578, scale: 0.77 },
     ],
     /** Hero textures are 1/0.75 times their on-screen size (see tools/build-characters.py). */
     TEXTURE_SCALE: 0.75,
@@ -77,11 +83,11 @@ export const HERO = {
      * (Sending everyone down to one spot in front of the pile was tried and
      * rejected: the heroes looked like they were hitting the gold.)
      */
-    STRIKE_FRONT_X: 790,
+    STRIKE_FRONT_X: 875,
     /** How far the hero steps back in the wind-up, px. */
     WINDUP_BACK: 24,
-    /** Branch lead stands apart from the department heroes, far left, a little smaller than them. */
-    LEAD: { x: 118, y: 540, scale: 0.85 },
+    /** Branch lead stands apart from the department heroes, far left, ~12 % taller than a front-row hero (so it stands out, but not too much). */
+    LEAD: { x: 100, y: 540, scale: 0.86 },
 } as const;
 
 /**
@@ -121,7 +127,7 @@ export const IDLE_ANIM = {
     FRAME_MS: 100,
     TURN_MS: 40_000,
     /** The branch lead dashes this far toward the heroes when it cheers a sale, and comes back. */
-    LEAD_DASH_PX: 70,
+    LEAD_DASH_PX: 55,
     LEAD_DASH_MS: 300,
 } as const;
 

@@ -3,7 +3,7 @@ import { DRAGON } from '../core/Constants';
 import { emitBurst, emitCoinBurst, emitShockwaveRing } from '../systems/Fx';
 import { AudioSystem } from '../systems/Audio';
 
-const TEXTURE_SCALE = 0.5;
+const TEXTURE_SCALE = 0.5 * DRAGON.SCALE;
 
 /**
  * The plan's guardian: a gold mountain with a five-headed dragon sitting on it.
@@ -96,7 +96,7 @@ export class Dragon extends GameObjects.Container {
         this.bodyImg.setTint(0xff3b1f).setTintMode(TintModes.FILL);
 
         const x = DRAGON.HIT_X - 10;
-        const y = DRAGON.BODY_BOTTOM_Y - 170;
+        const y = DRAGON.BODY_BOTTOM_Y - 170 * DRAGON.SCALE;
         emitBurst(this.scene, x, y, 0xff6a2a, 26);
         emitBurst(this.scene, x, y, 0xffd24a, 16);
         emitShockwaveRing(this.scene, x, y, 0xff6a2a);
@@ -178,7 +178,7 @@ export class Dragon extends GameObjects.Container {
             onStart: () => {
                 this.scene.cameras.main.shake(trembleMs, 0.0016);
                 const mouthX = DRAGON.HIT_X - 10;
-                const mouthY = DRAGON.BODY_BOTTOM_Y - 170;
+                const mouthY = DRAGON.BODY_BOTTOM_Y - 170 * DRAGON.SCALE;
                 emitBurst(this.scene, mouthX, mouthY, 0xff6a2a, 6);
                 emitBurst(this.scene, mouthX, mouthY, 0xffd24a, 4);
             },

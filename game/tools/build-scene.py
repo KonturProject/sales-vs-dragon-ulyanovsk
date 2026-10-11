@@ -75,7 +75,7 @@ DARKEN = 0.60          # overall brightness
 DESATURATE = 0.72      # 1 = as drawn
 TINT = (0.90, 0.84, 1.06)  # multiplied in: cooler, more violet shadows
 VIGNETTE = 0.48        # how dark the corners get (0 = none)
-GLOW_AT = (955, 470)   # the gold pile: it lights the floor and the rock around it
+GLOW_AT = (1020, 475)   # the gold pile: it lights the floor and the rock around it
 GLOW_RADIUS = 420
 GLOW_COLOR = (255, 150, 60)
 GLOW_STRENGTH = 0.34
