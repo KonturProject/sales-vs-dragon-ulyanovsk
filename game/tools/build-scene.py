@@ -70,6 +70,38 @@ def floor():
     return Image.fromarray(px, 'RGBA').crop((0, 0, W, H - FLOOR_TOP))
 
 
+# ---- mood: the pack is a bright pink sunset; the game wants a darker, grimmer lair -----------------------------------
+DARKEN = 0.60          # overall brightness
+DESATURATE = 0.72      # 1 = as drawn
+TINT = (0.90, 0.84, 1.06)  # multiplied in: cooler, more violet shadows
+VIGNETTE = 0.48        # how dark the corners get (0 = none)
+GLOW_AT = (955, 470)   # the gold pile: it lights the floor and the rock around it
+GLOW_RADIUS = 420
+GLOW_COLOR = (255, 150, 60)
+GLOW_STRENGTH = 0.34
+
+
+def grade(img):
+    """Darken, desaturate and cool the whole picture, add a vignette and the warm glow of the gold pile."""
+    a = np.array(img.convert('RGB')).astype(np.float32) / 255.0
+    h, w = a.shape[:2]
+    lum = (a * np.array([0.299, 0.587, 0.114], dtype=np.float32)).sum(axis=2, keepdims=True)
+    a = lum + (a - lum) * DESATURATE
+    a = a * np.array(TINT, dtype=np.float32)
+    a = np.power(np.clip(a, 0, 1), 1.18) * DARKEN                      # a touch more contrast, then darker
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    # vignette (elliptical, stronger toward the corners)
+    d = np.sqrt(((xx - w / 2) / (w * 0.62)) ** 2 + ((yy - h * 0.46) / (h * 0.72)) ** 2)
+    a *= (1.0 - VIGNETTE * np.clip(d, 0, 1.2) ** 2)[..., None]
+    # extra darkness on the lower floor (the light dies away toward the viewer)
+    a *= np.interp(yy[:, 0], [0, FLOOR_TOP, h], [1.0, 0.95, 0.62])[:, None, None]
+    # warm glow from the gold, added (screen-like) so the dragon's pile stays the brightest thing in the picture
+    g = np.exp(-(((xx - GLOW_AT[0]) / GLOW_RADIUS) ** 2 + ((yy - GLOW_AT[1]) / (GLOW_RADIUS * 0.62)) ** 2) * 2.2)
+    glow = g[..., None] * (np.array(GLOW_COLOR, dtype=np.float32) / 255.0) * GLOW_STRENGTH
+    a = 1.0 - (1.0 - np.clip(a, 0, 1)) * (1.0 - glow)
+    return Image.fromarray((np.clip(a, 0, 1) * 255 + 0.5).astype(np.uint8), 'RGB')
+
+
 def main():
     scene = Image.new('RGBA', (W, H), (0, 0, 0, 255))
     scene.alpha_composite(layer('back'))
@@ -84,7 +116,7 @@ def main():
         im, pos = prop(name, x, y, flip)
         scene.alpha_composite(im, pos)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    scene.convert('RGB').save(OUT, quality=93)
+    grade(scene).save(OUT, quality=93)
     print('wrote', OUT)
 
 
