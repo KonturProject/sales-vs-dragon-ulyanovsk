@@ -519,7 +519,7 @@ function renderImportPreview(file: ParsedPayments, now: PeriodNow) {
     const notes: { text: string; warn?: boolean }[] = [];
     notes.push({ text: `Все записи таблицы за ${period} (${records(now.rows)} на ${money(now.amount)}) заменятся счетами из файла.` });
     if (now.manualRows > 0) {
-        notes.push({ text: `Из них внесены вручную: ${records(now.manualRows)} на ${money(now.manualAmount)} — они тоже заменятся. Если эти оплаты есть в выгрузке, двойного учёта не будет.` });
+        notes.push({ text: `Из них внесено вручную: ${records(now.manualRows)} на ${money(now.manualAmount)} — тоже заменятся. Если эти оплаты есть в выгрузке, двойного учёта не будет.` });
     }
     if (file.fileTotal !== null) {
         if (Math.abs(file.fileTotal - file.linesTotal) < 0.5) notes.push({ text: `Сумма строк файла совпадает с его итогом «Сумма заказа»: ${money(file.fileTotal)}.` });
