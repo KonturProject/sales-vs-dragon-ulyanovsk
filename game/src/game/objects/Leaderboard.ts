@@ -3,11 +3,13 @@ import { GAME, HeroSlug } from '../core/Constants';
 import { RosterConfig } from '../systems/RosterConfig';
 
 const ROW_HEIGHT = 22;
-const PANEL_WIDTH = 184;
+/** Room for «● ВШ10 • Бордачева В.» plus a seven-digit sum. */
+const PANEL_WIDTH = 270;
 const PANEL_PADDING = 6;
 
 interface Row {
     row: GameObjects.Container;
+    label: GameObjects.Text;
     amountText: GameObjects.Text;
     swatch: GameObjects.Arc;
 }
@@ -33,7 +35,7 @@ export class Leaderboard extends GameObjects.Container {
             const color = Display.Color.HexStringToColor(def.color).color;
 
             const swatch = scene.add.circle(14, ROW_HEIGHT / 2, 6, color);
-            const label = scene.add.text(26, ROW_HEIGHT / 2, RosterConfig.ropNameForSlug(def.slug) ?? def.slug, {
+            const label = scene.add.text(26, ROW_HEIGHT / 2, RosterConfig.plateText(def.slug), {
                 fontFamily: 'Arial, sans-serif',
                 fontSize: '13px',
                 resolution: GAME.RENDER_SCALE,
@@ -48,7 +50,7 @@ export class Leaderboard extends GameObjects.Container {
 
             const row = scene.add.container(0, rowY, [swatch, label, amountText]);
             this.add(row);
-            this.rows.set(def.slug, { row, amountText, swatch });
+            this.rows.set(def.slug, { row, label, amountText, swatch });
         });
 
         scene.add.existing(this);
@@ -58,6 +60,15 @@ export class Leaderboard extends GameObjects.Container {
     refreshColors() {
         for (const def of RosterConfig.fighters) {
             this.rows.get(def.slug)?.swatch.setFillStyle(Display.Color.HexStringToColor(def.color).color);
+        }
+    }
+
+    /** A group leader was renamed in the admin page — the row reads «ВШ1 • Фамилия И.» like the nameplate. */
+    refreshLabels() {
+        for (const def of RosterConfig.fighters) {
+            const entry = this.rows.get(def.slug);
+            const text = RosterConfig.plateText(def.slug);
+            if (entry && entry.label.text !== text) entry.label.setText(text);
         }
     }
 

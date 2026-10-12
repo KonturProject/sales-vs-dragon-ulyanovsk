@@ -1,21 +1,25 @@
 import { Scene } from 'phaser';
 import {
     EventBus, GameEvents, MoneyInPayload, ProgressChangedPayload, DragonHeadLostPayload, DragonDefeatedPayload, AdminCommandPayload,
-    RosterChangedPayload,
+    RosterChangedPayload, LeadersChangedPayload,
 } from '../core/EventBus';
 import { GameState } from '../core/GameState';
 import { fitCameraToGame } from '../core/Render';
-import { DRAGON, GAME, HERO, HUD } from '../core/Constants';
+import { DRAGON, GAME, HERO, HUD, HeroSlug } from '../core/Constants';
 import { RosterConfig, HeroDef } from '../systems/RosterConfig';
 import { loadCharacters } from '../systems/CharacterLoader';
 import { DataPollingService } from '../systems/DataPollingService';
 import { Dragon } from '../objects/Dragon';
 import { HeroSprite } from '../objects/HeroSprite';
 import { LeadSprite } from '../objects/LeadSprite';
+import { NamePlate, PLATE_HEIGHT } from '../objects/NamePlate';
 import { IdleMood } from '../systems/IdleMood';
 import { LiveStand } from '../systems/LiveStand';
 import { emitFloatingAmount, startIdleSway } from '../systems/Fx';
 import { AudioSystem } from '../systems/Audio';
+
+/** Above every hero (their depth is the feet's y, at most ~600) and the lead, below the hit effects (1400). */
+const PLATE_DEPTH = 1000;
 
 /**
  * The tableau: department heroes on the left, the dragon on its gold mountain
@@ -26,6 +30,7 @@ import { AudioSystem } from '../systems/Audio';
 export class PenScene extends Scene {
     private dragon!: Dragon;
     private heroes = new Map<string, HeroSprite>();
+    private plates = new Map<string, NamePlate>();
     private lead: LeadSprite | null = null;
     private hasAppliedFirstProgress = false;
     private hasPlayedVictory = false;
@@ -51,6 +56,14 @@ export class PenScene extends Scene {
             const hero = new HeroSprite(this, slot.x, slot.y, def, slot.scale);
             hero.setDepth(slot.y);
             this.heroes.set(def.slug, hero);
+
+            // The group and its leader: over the head in the back row, under the feet in the front row.
+            const backRow = slot.y < HERO.SLOTS[1].y;
+            const heroHeight = HERO.TEXTURE_HEIGHT * HERO.TEXTURE_SCALE * slot.scale;
+            const plateY = backRow
+                ? slot.y - heroHeight - HERO.PLATE_GAP - PLATE_HEIGHT / 2
+                : slot.y + HERO.PLATE_GAP + PLATE_HEIGHT / 2;
+            this.plates.set(def.slug, new NamePlate(this, slot.x, plateY, RosterConfig.plateText(def.slug)).setDepth(PLATE_DEPTH));
         });
 
         const leadDef = RosterConfig.lead;
@@ -68,9 +81,11 @@ export class PenScene extends Scene {
         EventBus.on(GameEvents.DRAGON_DEFEATED, this.onDragonDefeated, this);
         EventBus.on(GameEvents.ADMIN_COMMAND, this.onAdminCommand, this);
         EventBus.on(GameEvents.ROSTER_CHANGED, this.onRosterChanged, this);
+        EventBus.on(GameEvents.LEADERS_CHANGED, this.onLeadersChanged, this);
 
         this.events.once('shutdown', () => {
             EventBus.off(GameEvents.ROSTER_CHANGED, this.onRosterChanged, this);
+            EventBus.off(GameEvents.LEADERS_CHANGED, this.onLeadersChanged, this);
             EventBus.off(GameEvents.ADMIN_COMMAND, this.onAdminCommand, this);
             EventBus.off(GameEvents.MONEY_IN, this.onMoneyIn, this);
             EventBus.off(GameEvents.PROGRESS_CHANGED, this.onProgressChanged, this);
@@ -99,6 +114,11 @@ export class PenScene extends Scene {
                 else this.heroes.get(def.slug)?.setCharacter(def);
             }
         });
+    }
+
+    /** The admin renamed group leaders: rewrite their plates (the plates stay where they are). */
+    private onLeadersChanged(payload: LeadersChangedPayload) {
+        for (const slot of payload.slots) this.plates.get(slot)?.setText(RosterConfig.plateText(slot as HeroSlug));
     }
 
     private onMoneyIn(payload: MoneyInPayload) {

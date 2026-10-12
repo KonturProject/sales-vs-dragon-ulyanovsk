@@ -31,6 +31,8 @@ export interface StatusResponse {
     serverNow?: number;
     /** Which character stands in each slot (slot -> character id), as chosen in the admin page; null/absent = defaults. */
     roster?: Record<string, string> | null;
+    /** Group leader on each department's nameplate (slot -> «Фамилия И.»), edited in the admin page; null/absent = defaults. */
+    leaders?: Record<string, string> | null;
     error?: string;
 }
 

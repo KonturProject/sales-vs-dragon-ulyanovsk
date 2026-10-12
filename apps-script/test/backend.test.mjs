@@ -270,7 +270,7 @@ test('roster: nothing chosen yet -> the public status carries null', () => {
 test('roster: setRoster stores the choice, merges later changes, and the public GET hands it out', () => {
     const b = loadBackend();
     const first = b.post({ action: 'setRoster', pin: PIN, roster: { slot_1: 'viking', slot_2: 'wizard', lead: 'businesswoman' } });
-    assert.deepEqual(first, { ok: true, roster: { slot_1: 'viking', slot_2: 'wizard', lead: 'businesswoman' } });
+    assert.deepEqual(first, { ok: true, roster: { slot_1: 'viking', slot_2: 'wizard', lead: 'businesswoman' }, leaders: null });
     const second = b.post({ action: 'setRoster', pin: PIN, roster: { slot_2: 'ninja' } });
     assert.deepEqual(second.roster, { slot_1: 'viking', slot_2: 'ninja', lead: 'businesswoman' });
     assert.deepEqual(b.get().roster, second.roster);
@@ -290,6 +290,166 @@ test('roster: it never touches the spreadsheet', () => {
     const before = JSON.stringify(b.salesRows()) + JSON.stringify(b.settingsRows());
     b.post({ action: 'setRoster', pin: PIN, roster: { slot_3: 'pirate' } });
     assert.equal(JSON.stringify(b.salesRows()) + JSON.stringify(b.settingsRows()), before);
+});
+
+test('leaders: names for the nameplates are stored, merged and handed out; the roster is left alone', () => {
+    const b = loadBackend();
+    assert.equal(b.get().leaders, null, 'nothing edited yet -> the displays use their built-in list');
+    const first = b.post({ action: 'setRoster', pin: PIN, leaders: { slot_1: 'Измайлова И.', slot_6: '  Бордачева   В. ' } });
+    assert.deepEqual(first, { ok: true, roster: null, leaders: { slot_1: 'Измайлова И.', slot_6: 'Бордачева В.' } });
+    const second = b.post({ action: 'setRoster', pin: PIN, roster: { slot_2: 'ninja' }, leaders: { slot_1: '' } });
+    assert.deepEqual(second.leaders, { slot_1: '', slot_6: 'Бордачева В.' }, 'an empty name clears the plate to the group code');
+    assert.deepEqual(second.roster, { slot_2: 'ninja' });
+    assert.deepEqual(b.get().leaders, second.leaders);
+});
+
+test('leaders: bad slots and names are refused without changing anything', () => {
+    const b = loadBackend();
+    for (const leaders of [null, [], 'Иванов', { lead: 'Иванов И.' }, { slot_7: 'Иванов И.' }, { slot_1: '=HYPERLINK("x")' }, { slot_1: 'И'.repeat(41) }, { slot_1: 'Иванов <b>' }]) {
+        assert.equal(b.post({ action: 'setRoster', pin: PIN, leaders }).error, 'bad_request', JSON.stringify(leaders));
+    }
+    assert.equal(b.post({ action: 'setRoster', pin: 'bad', leaders: { slot_1: 'Иванов И.' } }).error, 'invalid_pin');
+    assert.equal(b.get().leaders, null);
+});
+
+/* ------------------------------------------------------------- importSales */
+
+/** A sheet like the real Ulyanovsk one: tidy Date | Amount | ROP, no Invoice column yet. */
+function ulyanovskBackend() {
+    const b = loadBackend();
+    const rows = b.salesRows();
+    rows.length = 0;
+    rows.push(
+        ['Date', 'Amount', 'ROP'],
+        [b.day('2026-09-15'), 90000, 'ВШ1'], // last week: outside any period below
+        [b.day('2026-09-21'), 400000, 'ВШ1'],
+        [b.day('2026-09-22T11:30'), 250000, 'ВШ4'], // typed in by hand, with a time
+        [b.day('2026-09-23'), 120000, 'ВШ5'],
+    );
+    return b;
+}
+
+const importRows = [
+    { date: '2026-09-22', amount: 21990, rop: 'ВШ1', invoice: '568010911' },
+    { date: '2026-09-22', amount: 30, rop: 'ВШ4', invoice: '568465060' },
+    { date: '2026-09-23', amount: 112147.38, rop: 'ВШ10', invoice: '567674920' },
+];
+
+test('importSales dry run: what the sheet holds for the period now, nothing written', () => {
+    const b = ulyanovskBackend();
+    const before = JSON.stringify(b.salesRows());
+    const res = b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows, dryRun: true });
+    assert.equal(res.ok, true);
+    assert.equal(res.dryRun, true);
+    assert.deepEqual(res.current, { rows: 2, amount: 370000, manualRows: 2, manualAmount: 370000, byRop: { 'ВШ4': 250000, 'ВШ5': 120000 } });
+    assert.equal(JSON.stringify(b.salesRows()), before);
+});
+
+test('importSales replaces every payment of the period (typed in by hand too) and keeps the other days', () => {
+    const b = ulyanovskBackend();
+    const res = b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows, requestId: 'imp-1' });
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.removed, { rows: 2, amount: 370000 });
+    assert.deepEqual(res.added, { rows: 3, amount: 21990 + 30 + 112147.38 });
+    assert.equal(b.salesSheet().setValuesCalls, 1, 'one write for the whole table');
+
+    const rows = b.salesRows();
+    assert.deepEqual(rows[0], ['Date', 'Amount', 'ROP', 'Invoice'], 'the first import adds the Invoice column');
+    const sales = rows.slice(1).filter(r => r[0] !== '');
+    assert.deepEqual(sales.map(r => [r[1], r[2], r[3]]), [
+        [90000, 'ВШ1', ''],
+        [400000, 'ВШ1', ''],
+        [21990, 'ВШ1', '568010911'],
+        [30, 'ВШ4', '568465060'],
+        [112147.38, 'ВШ10', '567674920'],
+    ]);
+    assert.ok(sales.every(r => typeof r[0].getTime === 'function'), 'dates are real dates');
+
+    // Monday 2026-09-21 .. the week of the fake "now" (Wed 2026-09-23): the hand-typed 250 000 and 120 000 are gone.
+    assert.equal(res.status.totalThisWeek, 400000 + 21990 + 30 + 112147.38);
+    const byRop = Object.fromEntries(b.get().byRop.map(r => [r.ropName, r.amount]));
+    assert.deepEqual(byRop, { 'ВШ1': 421990, 'ВШ4': 30, 'ВШ10': 112147.38 });
+
+    const listed = b.post({ action: 'listSales', pin: PIN, limit: 1 }).sales[0];
+    assert.equal(listed.invoice, '567674920');
+});
+
+test('importSales again with the same or a fresher overlapping file never counts a payment twice', () => {
+    const b = ulyanovskBackend();
+    b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows });
+    b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows });
+    assert.equal(b.get().totalThisWeek, 400000 + 21990 + 30 + 112147.38);
+
+    // A later export covers 21..23 and lost one payment (cancelled in the CRM): the sheet follows it.
+    const fresher = [{ date: '2026-09-21', amount: 5000, rop: 'ВШ6', invoice: '1' }, importRows[0]];
+    const res = b.post({ action: 'importSales', pin: PIN, from: '2026-09-21', to: '2026-09-23', rows: fresher });
+    assert.deepEqual(res.removed, { rows: 4, amount: 400000 + 21990 + 30 + 112147.38 });
+    assert.equal(res.status.totalThisWeek, 5000 + 21990);
+});
+
+test('importSales with fewer rows than before blanks the leftover rows and leaves other columns alone', () => {
+    const b = loadBackend(); // the harness sheet: names in D, the drop-down list in F reaching further down
+    const res = b.post({ action: 'importSales', pin: PIN, from: '2026-09-21', to: '2026-09-23', rows: [importRows[0]] });
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.removed.rows, 3);
+    const rows = b.salesRows();
+    assert.equal(rows[0][6], 'Invoice', 'added after the last used column (F), not over the names in D');
+    assert.deepEqual([rows[1][1], rows[1][2], rows[1][6]], [21990, 'ВШ1', '568010911']);
+    for (const r of rows.slice(2, 4)) assert.deepEqual([r[0], r[1], r[2], r[6]], ['', '', '', ''], 'old sale rows are blanked');
+    assert.deepEqual(rows.map(r => r[5]), ['', 'ВШ1', 'ВШ2', 'ВШ3', 'ВШ5', 'ВШ6', 'ВШ9'], 'column F untouched');
+    assert.equal(b.post({ action: 'listSales', pin: PIN }).totalRows, 1);
+});
+
+test('importSales with an empty period list just clears the period', () => {
+    const b = ulyanovskBackend();
+    const res = b.post({ action: 'importSales', pin: PIN, from: '2026-09-21', to: '2026-09-23', rows: [] });
+    assert.deepEqual(res.removed, { rows: 3, amount: 770000 });
+    assert.equal(res.status.totalThisWeek, 0);
+    assert.equal(b.post({ action: 'listSales', pin: PIN }).totalRows, 1, 'last week is kept');
+});
+
+test('importSales grows the sheet when the rows do not fit', () => {
+    const b = ulyanovskBackend();
+    b.salesSheet().maxRows = 5;
+    const many = Array.from({ length: 20 }, (_, i) => ({ date: '2026-09-22', amount: 1000 + i, rop: 'ВШ9', invoice: String(i) }));
+    assert.equal(b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-22', rows: many }).added.rows, 20);
+    assert.equal(b.post({ action: 'listSales', pin: PIN }).totalRows, 3 + 20);
+});
+
+test('importSales refuses bad periods and rows (formulas too) and writes nothing', () => {
+    const b = ulyanovskBackend();
+    const before = JSON.stringify(b.salesRows());
+    const ok = { date: '2026-09-22', amount: 100, rop: 'ВШ1', invoice: '1' };
+    const cases = [
+        [{ from: '2026-09-23', to: '2026-09-22', rows: [] }, 'period'],
+        [{ from: '22.09.2026', to: '2026-09-23', rows: [] }, 'period'],
+        [{ from: '2026-02-30', to: '2026-09-23', rows: [] }, 'period'],
+        [{ from: '2026-09-21', to: '2030-01-01', rows: [] }, 'period'],
+        [{ from: '2026-09-21', to: '2026-09-23', rows: 'x' }, 'rows'],
+        [{ from: '2026-09-21', to: '2026-09-23', rows: Array(5001).fill(ok) }, 'rows'],
+        [{ from: '2026-09-21', to: '2026-09-23', rows: [ok, { ...ok, date: '2026-09-20' }] }, 'rows'],
+        [{ from: '2026-09-21', to: '2026-09-23', rows: [{ ...ok, rop: 'ВШ2' }] }, 'rows'],
+        [{ from: '2026-09-21', to: '2026-09-23', rows: [{ ...ok, rop: '=1+1' }] }, 'rows'],
+        [{ from: '2026-09-21', to: '2026-09-23', rows: [{ ...ok, amount: 0 }] }, 'rows'],
+        [{ from: '2026-09-21', to: '2026-09-23', rows: [{ ...ok, invoice: '=IMPORTXML("http://x")' }] }, 'rows'],
+        [{ from: '2026-09-21', to: '2026-09-23', rows: [null] }, 'rows'],
+    ];
+    for (const [payload, field] of cases) {
+        const res = b.post({ action: 'importSales', pin: PIN, ...payload });
+        assert.equal(res.error, 'bad_request', JSON.stringify(payload).slice(0, 120));
+        assert.equal(res.field, field);
+    }
+    assert.equal(b.post({ action: 'importSales', pin: PIN, from: '2026-09-21', to: '2026-09-23', rows: [ok, { ...ok, rop: 'ВШ3' }] }).row, 1, 'the bad entry is named');
+    assert.equal(b.post({ action: 'importSales', pin: 'bad', from: '2026-09-21', to: '2026-09-23', rows: [ok] }).error, 'invalid_pin');
+    assert.equal(JSON.stringify(b.salesRows()), before);
+});
+
+test('a retried importSales (same requestId) runs once', () => {
+    const b = ulyanovskBackend();
+    const first = b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows, requestId: 'r-imp' });
+    const writes = b.salesSheet().setValuesCalls;
+    assert.deepEqual(b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows, requestId: 'r-imp' }), first);
+    assert.equal(b.salesSheet().setValuesCalls, writes);
 });
 
 test('a fall command can name any of the six department slots', () => {

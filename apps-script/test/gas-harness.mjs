@@ -39,16 +39,40 @@ function formatDate(date, _tz, pattern) {
 }
 
 class FakeSheet {
-    constructor(rows) {
+    constructor(rows, { maxRows = 1000, maxColumns = 26 } = {}) {
         this.rows = rows;
+        this.maxRows = maxRows;
+        this.maxColumns = maxColumns;
+        /** How many times a range was written with setValues (the import must do it in one go). */
+        this.setValuesCalls = 0;
     }
-    getLastRow() { return this.rows.length; }
-    getLastColumn() { return this.rows.reduce((max, r) => Math.max(max, r.length), 0); }
+    /** Like Sheets: the last row/column holding a non-empty value (an empty string is no value). */
+    getLastRow() {
+        for (let r = this.rows.length - 1; r >= 0; r--) if (this.rows[r].some(v => v !== '' && v !== undefined)) return r + 1;
+        return 0;
+    }
+    getLastColumn() {
+        let last = 0;
+        for (const r of this.rows) r.forEach((v, c) => { if (v !== '' && v !== undefined) last = Math.max(last, c + 1); });
+        return last;
+    }
+    getMaxRows() { return this.maxRows; }
+    getMaxColumns() { return this.maxColumns; }
+    insertRowsAfter(_after, count) { this.maxRows += count; }
+    insertColumnsAfter(_after, count) { this.maxColumns += count; }
     getDataRange() {
-        return { getValues: () => this.rows.map(r => r.slice()) };
+        const width = this.getLastColumn();
+        return { getValues: () => this.rows.slice(0, this.getLastRow()).map(r => Array.from({ length: width }, (_, c) => r[c] ?? '')) };
     }
     getRange(row, col, numRows = 1, numCols = 1) {
         const sheet = this;
+        if (row + numRows - 1 > sheet.maxRows || col + numCols - 1 > sheet.maxColumns) {
+            throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+        }
+        const put = (r, c, value) => {
+            while (sheet.rows.length < r) sheet.rows.push([]);
+            sheet.rows[r - 1][c - 1] = value;
+        };
         return {
             getValues: () => {
                 const out = [];
@@ -59,10 +83,14 @@ class FakeSheet {
                 }
                 return out;
             },
-            setValue: (value) => {
-                while (sheet.rows.length < row) sheet.rows.push([]);
-                sheet.rows[row - 1][col - 1] = value;
+            setValue: (value) => put(row, col, value),
+            setValues: (values) => {
+                if (values.length !== numRows || values.some(line => line.length !== numCols)) throw new Error('The number of rows or columns in the data does not match the range.');
+                sheet.setValuesCalls++;
+                values.forEach((line, r) => line.forEach((value, c) => put(row + r, col + c, value)));
             },
+            setFontWeight() {},
+            setNumberFormat() {},
         };
     }
     appendRow(values) {
@@ -182,6 +210,9 @@ export function loadBackend({ startAt = Date.parse('2026-09-23T10:00:00+03:00'),
         /** Make a sheet "disappear" (to test failures on the server side). */
         renameSheet: (from, to) => { sheetNames[to] = sheetNames[from]; delete sheetNames[from]; },
         salesRows: () => state.sales.rows,
+        salesSheet: () => state.sales,
         settingsRows: () => state.settings.rows,
+        /** A Date the sheet would hold for a day in Moscow time ('2026-09-21' -> its midnight; with 'T10:00' a time). */
+        day: (text) => new FakeDate(RealDate.parse((text.length === 10 ? text + 'T00:00' : text) + ':00+03:00')),
     };
 }

@@ -10,19 +10,22 @@
  * (Project Settings > Script properties) and deploy as a Web App (execute as me, anyone can access).
  *
  * Sheet schema (tab names are literal, columns are header-matched, order-independent):
- *   "Sales"    — Date | Amount | ROP           (one row per incoming payment)
+ *   "Sales"    — Date | Amount | ROP | Invoice (one row per incoming payment; Invoice — the invoice number of an
+ *                                               imported payment, empty for one typed in by hand)
  *   "Settings" — Key | Value                   (rows: WeeklyPlan, TotalMeters)
  *
  * HTTP API (one Web App URL):
- *   GET            public, aggregates only: week status + recent admin "commands" for the displays.
+ *   GET            public, aggregates only: week status + recent admin "commands" + the stage setup for the displays.
  *   POST (JSON, sent as text/plain to avoid a CORS preflight) — every action needs the admin PIN:
- *     { action: 'login',     pin }                                  check the PIN
- *     { action: 'setPlan',   pin, plan }                            weekly plan (also the legacy { pin, plan } form)
- *     { action: 'listSales', pin, limit? }                          latest rows of "Sales" + week status + settings
- *     { action: 'addSale',   pin, rop, amount, date?, requestId? }  append a payment row to "Sales"
- *     { action: 'changePin', pin, newPin }                          change the PIN (stored as a salted hash)
- *     { action: 'command',   pin, type, args?, requestId? }         show an animation on the displays
- *     { action: 'setRoster', pin, roster }                          which character stands in which slot (see ROSTER_SLOTS)
+ *     { action: 'login',       pin }                                  check the PIN
+ *     { action: 'setPlan',     pin, plan }                            weekly plan (also the legacy { pin, plan } form)
+ *     { action: 'listSales',   pin, limit? }                          latest rows of "Sales" + week status + settings
+ *     { action: 'addSale',     pin, rop, amount, date?, requestId? }  append a payment row to "Sales"
+ *     { action: 'importSales', pin, from, to, rows, dryRun?, requestId? }  replace the payments of a period (export file)
+ *     { action: 'changePin',   pin, newPin }                          change the PIN (stored as a salted hash)
+ *     { action: 'command',     pin, type, args?, requestId? }         show an animation on the displays
+ *     { action: 'setRoster',   pin, roster?, leaders? }               which character stands in which slot (see ROSTER_SLOTS),
+ *                                                                     the group leaders' names on the stage nameplates
  *   Commands are pure visual triggers: they live in Script Properties, never in the spreadsheet,
  *   and never touch "Sales"/"Settings".
  *
@@ -49,6 +52,14 @@ var COMMAND_SEQ_PROPERTY_KEY = 'COMMAND_SEQ';
 var ROSTER_PROPERTY_KEY = 'ROSTER';
 /** Places on the stage: six departments (left to right) and the branch lead. */
 var ROSTER_SLOTS = ['slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6', 'lead'];
+/** JSON { slot: 'Фамилия И.' } — the group leader shown on each department's nameplate, edited in the admin page. */
+var LEADERS_PROPERTY_KEY = 'LEADERS';
+var LEADER_SLOTS = ['slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6'];
+
+/** Header of the "Sales" column that holds the invoice number of an imported payment (added by the first import). */
+var INVOICE_HEADER = 'Invoice';
+/** One export file is a few hundred rows a month; this only stops an absurd request. */
+var MAX_IMPORT_ROWS = 5000;
 
 /** After this many wrong PINs within PIN_FAILURE_WINDOW_SEC the admin API refuses everything for PIN_LOCK_SEC. */
 var MAX_PIN_FAILURES = 5;
@@ -76,7 +87,7 @@ function getSpreadsheet_() {
 /**
  * Run ONCE from the Apps Script editor (function dropdown > setupSpreadsheet > Run; Google asks for access the
  * first time). Creates the spreadsheet «победи дракона» in the owner's Drive with the two tabs this backend needs:
- *   Sales    Date | Amount | ROP   (ROP has a drop-down of the six groups)
+ *   Sales    Date | Amount | ROP | Invoice   (ROP has a drop-down of the six groups)
  *   Settings Key | Value           (WeeklyPlan, TotalMeters)
  * and stores its id in Script Properties. Safe to run again: it does nothing if a spreadsheet is already set up.
  */
@@ -91,7 +102,7 @@ function setupSpreadsheet() {
 
   var sales = ss.getActiveSheet();
   sales.setName(SALES_SHEET_NAME);
-  sales.getRange(1, 1, 1, 3).setValues([['Date', 'Amount', 'ROP']]).setFontWeight('bold');
+  sales.getRange(1, 1, 1, 4).setValues([['Date', 'Amount', 'ROP', INVOICE_HEADER]]).setFontWeight('bold');
   sales.setFrozenRows(1);
   sales.getRange('A2:A').setNumberFormat('yyyy-mm-dd');
   sales.getRange('B2:B').setNumberFormat('#,##0');
@@ -125,6 +136,7 @@ function doGet(e) {
     var status = computeWeeklyStatus_();
     status.commands = readRecentCommands_();
     status.roster = readRoster_();
+    status.leaders = readLeaders_();
     status.serverNow = Date.now();
     return jsonResponse_(status);
   } catch (err) {
@@ -172,6 +184,7 @@ var ACTIONS_ = {
   setPlan: actionSetPlan_,
   listSales: actionListSales_,
   addSale: actionAddSale_,
+  importSales: actionImportSales_,
   changePin: actionChangePin_,
   command: actionCommand_,
   setRoster: actionSetRoster_
@@ -201,6 +214,7 @@ function actionListSales_(body) {
   var tz = getSpreadsheet_().getSpreadsheetTimeZone();
   var sheet = getSalesSheet_();
   var cols = salesColumns_(sheet);
+  var invoiceCol = invoiceColumn_(sheet, false);
   var status = computeWeeklyStatus_();
 
   // Read the whole sheet: getLastRow() also counts rows that only hold other data (the ROP drop-down's
@@ -218,7 +232,8 @@ function actionListSales_(body) {
       row: i + 1,
       date: raw instanceof Date ? formatSaleDate_(raw, tz) : String(raw),
       amount: Number(values[i][cols.amount]) || 0,
-      rop: String(values[i][cols.rop] || '')
+      rop: String(values[i][cols.rop] || ''),
+      invoice: invoiceCol >= 0 ? String(values[i][invoiceCol] || '') : ''
     });
   }
 
@@ -265,6 +280,121 @@ function actionAddSale_(body) {
   });
 }
 
+/**
+ * Replaces the payments of a period with those of an export file (admin page, tab «Импорт»: the file is read in the
+ * browser, only date / amount / group / invoice number get here). Every sale dated from..to (inclusive, in the sheet's
+ * time zone) goes — imported earlier or typed in by hand — and the file's rows take its place; the rest of the sheet
+ * is kept. The file is the truth for its period: re-importing an overlapping export never counts a payment twice, and
+ * a payment cancelled in the CRM disappears with the next import.
+ *
+ * { dryRun: true } changes nothing and only reports what the sheet holds for the period now (the admin page shows
+ * "now → after" per group before the real run).
+ *
+ * The sheet is rewritten with ONE setValues over its sales rows (kept + imported, sorted by date, the leftover rows
+ * blanked) — never a row deletion, and no moment where the old rows are gone but the new ones are not written yet.
+ * Only the Date / Amount / ROP / Invoice cells change; other columns keep their values.
+ */
+function actionImportSales_(body) {
+  var from = validDay_(body.from);
+  var to = validDay_(body.to);
+  if (!from || !to || from > to) return badRequest_('period');
+
+  var input = body.rows;
+  if (!Array.isArray(input) || input.length > MAX_IMPORT_ROWS) return badRequest_('rows');
+  var rows = [];
+  for (var i = 0; i < input.length; i++) {
+    var r = input[i] && typeof input[i] === 'object' ? input[i] : {};
+    var day = validDay_(r.date);
+    var amount = validateAmount_(r.amount);
+    var rop = validateRop_(r.rop);
+    var invoice = String(r.invoice === undefined || r.invoice === null ? '' : r.invoice).trim();
+    if (!day || day < from || day > to || amount === null || DEPARTMENT_CODES.indexOf(rop) < 0 || !/^[0-9A-Za-zА-Яа-яЁё\/_-]{0,30}$/.test(invoice)) {
+      return badRequest_('rows', i);
+    }
+    rows.push({ day: day, amount: amount, rop: rop, invoice: invoice });
+  }
+
+  var tz = getSpreadsheet_().getSpreadsheetTimeZone();
+  var sheet = getSalesSheet_();
+
+  if (body.dryRun) {
+    var cols = salesColumns_(sheet);
+    cols.invoice = invoiceColumn_(sheet, false);
+    var values = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), sheet.getLastColumn()).getValues();
+    var current = { rows: 0, amount: 0, manualRows: 0, manualAmount: 0, byRop: {} };
+    for (var j = 1; j < values.length; j++) {
+      if (isBlankSale_(values[j], cols)) continue;
+      var d = saleDay_(values[j][cols.date], tz);
+      if (!d || d < from || d > to) continue;
+      var sum = Number(values[j][cols.amount]) || 0;
+      var code = String(values[j][cols.rop] || '').trim();
+      current.rows++;
+      current.amount += sum;
+      current.byRop[code] = (current.byRop[code] || 0) + sum;
+      if (cols.invoice < 0 || String(values[j][cols.invoice]).trim() === '') {
+        current.manualRows++;
+        current.manualAmount += sum;
+      }
+    }
+    return { ok: true, dryRun: true, from: from, to: to, current: current };
+  }
+
+  return withLock_(function () {
+    var cols = salesColumns_(sheet);
+    cols.invoice = invoiceColumn_(sheet, true);
+    var values = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), sheet.getLastColumn()).getValues();
+
+    var kept = [];
+    var removed = { rows: 0, amount: 0 };
+    var lastSale = 0; // index (in values) of the last row holding a sale
+    for (var j = 1; j < values.length; j++) {
+      if (isBlankSale_(values[j], cols)) continue;
+      lastSale = j;
+      var d = saleDay_(values[j][cols.date], tz);
+      if (d && d >= from && d <= to) {
+        removed.rows++;
+        removed.amount += Number(values[j][cols.amount]) || 0;
+        continue;
+      }
+      kept.push({ day: d, date: values[j][cols.date], amount: values[j][cols.amount], rop: values[j][cols.rop], invoice: values[j][cols.invoice] });
+    }
+
+    var added = { rows: rows.length, amount: 0 };
+    var midnight = {}; // day -> Date, parsed once per day rather than once per row
+    var incoming = rows.map(function (r) {
+      added.amount += r.amount;
+      if (!midnight[r.day]) midnight[r.day] = Utilities.parseDate(r.day + 'T00:00', tz, "yyyy-MM-dd'T'HH:mm");
+      return { day: r.day, date: midnight[r.day], amount: r.amount, rop: r.rop, invoice: r.invoice };
+    });
+    // A stable sort (V8): rows of one day keep their order — the kept ones first, then the file's.
+    var all = kept.concat(incoming).sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; });
+
+    // Cover every row that held a sale before, so the ones no longer needed are blanked in the same write.
+    var span = Math.max(all.length, lastSale);
+    if (span > 0) {
+      if (sheet.getMaxRows() < span + 1) sheet.insertRowsAfter(sheet.getMaxRows(), span + 1 - sheet.getMaxRows());
+      var touched = [cols.date, cols.amount, cols.rop, cols.invoice];
+      var first = Math.min.apply(null, touched);
+      var width = Math.max.apply(null, touched) - first + 1;
+      var block = [];
+      for (var k = 0; k < span; k++) {
+        var source = values[k + 1] || [];
+        var line = [];
+        for (var c = 0; c < width; c++) line.push(source[first + c] === undefined ? '' : source[first + c]);
+        var sale = all[k];
+        line[cols.date - first] = sale ? sale.date : '';
+        line[cols.amount - first] = sale ? sale.amount : '';
+        line[cols.rop - first] = sale ? sale.rop : '';
+        line[cols.invoice - first] = sale && sale.invoice !== undefined ? sale.invoice : '';
+        block.push(line);
+      }
+      sheet.getRange(2, first + 1, span, width).setValues(block);
+    }
+
+    return { ok: true, from: from, to: to, removed: removed, added: added, status: computeWeeklyStatus_() };
+  });
+}
+
 function actionChangePin_(body) {
   var newPin = String(body.newPin === undefined ? '' : body.newPin);
   if (!/^[0-9]{4,12}$/.test(newPin)) return badRequest_('newPin');
@@ -306,33 +436,66 @@ function actionCommand_(body) {
  * the displays pick the new choice up with their next poll and swap the heroes on stage.
  */
 function actionSetRoster_(body) {
-  var input = body.roster;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return badRequest_('roster');
   var changes = {};
-  for (var key in input) {
-    if (!input.hasOwnProperty(key)) continue;
-    if (ROSTER_SLOTS.indexOf(key) < 0) return badRequest_('roster');
-    var id = String(input[key]);
-    if (!/^[a-z0-9_]{2,32}$/.test(id)) return badRequest_('roster');
-    changes[key] = id;
+  if (body.roster !== undefined) {
+    var input = body.roster;
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return badRequest_('roster');
+    for (var key in input) {
+      if (!input.hasOwnProperty(key)) continue;
+      if (ROSTER_SLOTS.indexOf(key) < 0) return badRequest_('roster');
+      var id = String(input[key]);
+      if (!/^[a-z0-9_]{2,32}$/.test(id)) return badRequest_('roster');
+      changes[key] = id;
+    }
   }
-  if (Object.keys(changes).length === 0) return badRequest_('roster');
+
+  // The group leaders' names on the nameplates («Фамилия И.»); an empty name leaves just the group code.
+  var nameChanges = {};
+  if (body.leaders !== undefined) {
+    var names = body.leaders;
+    if (!names || typeof names !== 'object' || Array.isArray(names)) return badRequest_('leaders');
+    for (var slotKey in names) {
+      if (!names.hasOwnProperty(slotKey)) continue;
+      if (LEADER_SLOTS.indexOf(slotKey) < 0) return badRequest_('leaders');
+      var name = String(names[slotKey] === null || names[slotKey] === undefined ? '' : names[slotKey]).replace(/\s+/g, ' ').trim();
+      if (!/^[A-Za-zА-Яа-яЁё .'-]{0,40}$/.test(name)) return badRequest_('leaders');
+      nameChanges[slotKey] = name;
+    }
+  }
+  if (Object.keys(changes).length === 0 && Object.keys(nameChanges).length === 0) return badRequest_('roster');
 
   return withLock_(function () {
-    var roster = readRoster_() || {};
-    for (var slot in changes) roster[slot] = changes[slot];
-    PropertiesService.getScriptProperties().setProperty(ROSTER_PROPERTY_KEY, JSON.stringify(roster));
-    return { ok: true, roster: roster };
+    var props = PropertiesService.getScriptProperties();
+    if (Object.keys(changes).length > 0) {
+      var roster = readRoster_() || {};
+      for (var slot in changes) roster[slot] = changes[slot];
+      props.setProperty(ROSTER_PROPERTY_KEY, JSON.stringify(roster));
+    }
+    if (Object.keys(nameChanges).length > 0) {
+      var leaders = readLeaders_() || {};
+      for (var s in nameChanges) leaders[s] = nameChanges[s];
+      props.setProperty(LEADERS_PROPERTY_KEY, JSON.stringify(leaders));
+    }
+    return { ok: true, roster: readRoster_(), leaders: readLeaders_() };
   });
 }
 
 /** The saved choice, or null while nothing has been chosen (the displays then use their built-in defaults). */
 function readRoster_() {
-  var raw = PropertiesService.getScriptProperties().getProperty(ROSTER_PROPERTY_KEY);
+  return readJsonProperty_(ROSTER_PROPERTY_KEY);
+}
+
+/** The saved group leaders' names, or null while none were edited (the displays then use their built-in list). */
+function readLeaders_() {
+  return readJsonProperty_(LEADERS_PROPERTY_KEY);
+}
+
+function readJsonProperty_(key) {
+  var raw = PropertiesService.getScriptProperties().getProperty(key);
   if (!raw) return null;
   try {
-    var roster = JSON.parse(raw);
-    return roster && typeof roster === 'object' && !Array.isArray(roster) ? roster : null;
+    var value = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
   } catch (err) {
     return null;
   }
@@ -406,6 +569,22 @@ function parseSaleDate_(value) {
   return date;
 }
 
+/** 'yyyy-MM-dd' -> the same text if it is a real day that a sale may carry (see parseSaleDate_), otherwise ''. */
+function validDay_(value) {
+  var text = String(value === undefined || value === null ? '' : value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '';
+  var date = parseSaleDate_(text);
+  // The round trip rejects days a lenient parser would roll over (2026-02-30 -> 2026-03-02).
+  return date && Utilities.formatDate(date, getSpreadsheet_().getSpreadsheetTimeZone(), 'yyyy-MM-dd') === text ? text : '';
+}
+
+/** The day ('yyyy-MM-dd', sheet time zone) a "Sales" Date cell belongs to; '' if it holds no readable date. */
+function saleDay_(value, tz) {
+  if (value instanceof Date) return isNaN(value.getTime()) ? '' : Utilities.formatDate(value, tz, 'yyyy-MM-dd');
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(value).trim());
+  return m ? m[1] : '';
+}
+
 /** A "Sales" row with nothing in Date, Amount and ROP (other columns are ignored). */
 function isBlankSale_(row, cols) {
   return String(row[cols.date]).trim() === '' && String(row[cols.amount]).trim() === '' && String(row[cols.rop]).trim() === '';
@@ -417,8 +596,11 @@ function formatSaleDate_(date, tz) {
   return Utilities.formatDate(date, tz, 'yyyy-MM-dd') + (time === '00:00' ? '' : ' ' + time);
 }
 
-function badRequest_(field) {
-  return { ok: false, error: 'bad_request', field: field };
+/** `row` — the index of the offending entry when a list was sent (importSales). */
+function badRequest_(field, row) {
+  var res = { ok: false, error: 'bad_request', field: field };
+  if (row !== undefined) res.row = row;
+  return res;
 }
 
 /* ------------------------------------------------------------------- status */
@@ -571,6 +753,24 @@ function salesColumns_(sheet) {
   var cols = { date: header.indexOf('Date'), amount: header.indexOf('Amount'), rop: header.indexOf('ROP') };
   if (cols.date < 0 || cols.amount < 0 || cols.rop < 0) throw new Error('Sales sheet must have Date, Amount, ROP columns');
   return cols;
+}
+
+/**
+ * 0-based index of the Invoice column; -1 if there is none yet — unless `create`, which then adds it right after
+ * the last used column (the first import does that, so a sheet made before imports existed keeps working).
+ */
+function invoiceColumn_(sheet, create) {
+  var width = Math.max(1, sheet.getLastColumn());
+  var index = sheet.getRange(1, 1, 1, width).getValues()[0].indexOf(INVOICE_HEADER);
+  if (index >= 0 || !create) return index;
+  var column = sheet.getLastColumn() + 1;
+  if (sheet.getMaxColumns() < column) sheet.insertColumnsAfter(sheet.getMaxColumns(), column - sheet.getMaxColumns());
+  var cell = sheet.getRange(1, column);
+  cell.setValue(INVOICE_HEADER);
+  cell.setFontWeight('bold');
+  // Plain text: otherwise Sheets turns «568010911» into a number (and would drop leading zeros of other formats).
+  sheet.getRange(2, column, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+  return column - 1;
 }
 
 function getSettingsSheet_() {

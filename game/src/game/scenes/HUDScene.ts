@@ -141,6 +141,8 @@ export class HUDScene extends Scene {
         // A hero in some slot was swapped in the admin page — its colour belongs to the leaderboard row too.
         const onRosterChanged = () => this.leaderboard.refreshColors();
         EventBus.on(GameEvents.ROSTER_CHANGED, onRosterChanged);
+        const onLeadersChanged = () => this.leaderboard.refreshLabels();
+        EventBus.on(GameEvents.LEADERS_CHANGED, onLeadersChanged);
 
         // Each lost head is a daily plan cleared — a quick confetti burst and a
         // bright pulse right on the bar (the final head also gets the full victory).
@@ -179,6 +181,7 @@ export class HUDScene extends Scene {
             EventBus.off(GameEvents.DRAGON_DEFEATED, onDragonDefeated);
             EventBus.off(GameEvents.MONEY_IN, onMoneyIn);
             EventBus.off(GameEvents.ROSTER_CHANGED, onRosterChanged);
+            EventBus.off(GameEvents.LEADERS_CHANGED, onLeadersChanged);
             EventBus.off(GameEvents.DRAGON_HEAD_LOST, onHeadLost);
             statusTimer.remove();
         });

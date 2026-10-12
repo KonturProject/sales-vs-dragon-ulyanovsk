@@ -1,6 +1,6 @@
-import { EventBus, GameEvents, MoneyInPayload, ProgressChangedPayload, RosterChangedPayload } from '../core/EventBus';
+import { EventBus, GameEvents, LeadersChangedPayload, MoneyInPayload, ProgressChangedPayload, RosterChangedPayload } from '../core/EventBus';
 import { GameState, StatusResponse } from '../core/GameState';
-import { DRAGON, HERO, POLL } from '../core/Constants';
+import { DRAGON, HERO, HERO_SLUGS, POLL } from '../core/Constants';
 import { RosterConfig } from './RosterConfig';
 
 interface RuntimeConfig {
@@ -100,19 +100,27 @@ function diffAndEmit(previous: Record<string, number> | null, status: StatusResp
     let hitCount = 0;
 
     if (previous !== null) {
-        let staggerIndex = 0;
+        // One blow per hero and poll, even when its group's money came under two spellings of the name (or the
+        // poll caught several payments, e.g. right after an import): the deltas of a slot are added up.
+        const bySlot = new Map<string, MoneyInPayload>();
         for (const row of status.byRop) {
-            const before = previous[row.ropName] ?? 0;
-            const delta = row.amount - before;
-            if (delta > 0) {
-                const heroSlug = RosterConfig.heroSlugForRop(row.ropName);
-                const payload: MoneyInPayload = { heroSlug: heroSlug ?? 'overflow', ropName: row.ropName, delta };
-                const fireAt = staggerIndex * HERO.HIT_STAGGER_MS;
-                staggerIndex++;
-                hitCount++;
-                setTimeout(() => EventBus.emit(GameEvents.MONEY_IN, payload), fireAt);
-            }
+            const delta = row.amount - (previous[row.ropName] ?? 0);
+            if (delta <= 0) continue;
+            const heroSlug = RosterConfig.heroSlugForRop(row.ropName) ?? 'overflow';
+            const key = heroSlug === 'overflow' ? `overflow:${row.ropName}` : heroSlug;
+            const earlier = bySlot.get(key);
+            if (earlier) earlier.delta += delta;
+            else bySlot.set(key, { heroSlug, ropName: row.ropName, delta });
         }
+        // Left to right across the stage, one hero after another — each blow lands on its own (HIT_STAGGER_MS).
+        const order = (p: MoneyInPayload) => {
+            const i = (HERO_SLUGS as readonly string[]).indexOf(p.heroSlug);
+            return i < 0 ? HERO_SLUGS.length : i;
+        };
+        [...bySlot.values()].sort((a, b) => order(a) - order(b)).forEach((payload, i) => {
+            hitCount++;
+            setTimeout(() => EventBus.emit(GameEvents.MONEY_IN, payload), i * HERO.HIT_STAGGER_MS);
+        });
     }
 
     // Head loss / victory should only play once every staggered hit from this
@@ -191,9 +199,14 @@ function dispatchCommands(status: StatusResponse) {
  * Only a *changed* choice causes anything (RosterConfig compares it with what is shown now).
  */
 function applyRoster(status: StatusResponse) {
-    if (!status.roster) return;
-    const slots = RosterConfig.applySelection(status.roster);
-    if (slots.length > 0) EventBus.emit(GameEvents.ROSTER_CHANGED, { slots } satisfies RosterChangedPayload);
+    if (status.roster) {
+        const slots = RosterConfig.applySelection(status.roster);
+        if (slots.length > 0) EventBus.emit(GameEvents.ROSTER_CHANGED, { slots } satisfies RosterChangedPayload);
+    }
+    if (status.leaders) {
+        const slots = RosterConfig.applyLeaders(status.leaders);
+        if (slots.length > 0) EventBus.emit(GameEvents.LEADERS_CHANGED, { slots } satisfies LeadersChangedPayload);
+    }
 }
 
 async function tick() {

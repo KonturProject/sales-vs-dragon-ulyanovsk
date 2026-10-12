@@ -1,7 +1,7 @@
 import characterList from '../config/characters.json';
 import defaultRoster from '../config/heroRoster.json';
-import ropMapping from '../config/ropMapping.json';
 import { HeroSlug, HERO_SLUGS } from '../core/Constants';
+import { GROUP_SLOTS, groupCode, plateText, sanitiseLeaders, slotForGroup } from './Groups';
 
 /** One of the selectable characters (config/characters.json, built by tools/build-characters.py). */
 export interface CharacterDef {
@@ -33,22 +33,9 @@ export const LEAD_SLOT: HeroSlug = 'lead';
 const FIGHTER_SLOTS = HERO_SLUGS.filter(s => s !== LEAD_SLOT);
 
 const characters = characterList.characters as CharacterDef[];
-const mapping = ropMapping.mapping as Record<string, HeroSlug>;
-const labels = ropMapping.labels as Record<string, string>;
 
 const STORAGE_KEY = 'roster-selection';
-
-/** Cyrillic and look-alike Latin letters are all written in sheets by hand — fold them so «ВШ5» matches however it was typed. */
-const LOOKALIKE: Record<string, string> = { B: 'В', b: 'в', W: 'Ш' };
-function normalise(name: string): string {
-    return name.trim().replace(/\s+/g, ' ').replace(/[BbW]/g, c => LOOKALIKE[c]).toUpperCase();
-}
-const normalisedMapping = new Map<string, HeroSlug>();
-const slotByNumber = new Map<string, HeroSlug>();
-for (const [name, slot] of Object.entries(mapping)) {
-    normalisedMapping.set(normalise(name), slot);
-    if (/^ВШ\d+$/.test(normalise(name))) slotByNumber.set(normalise(name).slice(2), slot);
-}
+const LEADERS_STORAGE_KEY = 'roster-leaders';
 
 function isKnownCharacter(id: unknown): id is string {
     return typeof id === 'string' && characters.some(c => c.id === id);
@@ -66,16 +53,24 @@ function sanitise(raw: unknown): Selection {
     return out;
 }
 
-function readSaved(): Selection | null {
+/** What this display last received from the backend (so a reload shows it at once, before the first poll). */
+function readStored<T>(key: string, clean: (raw: unknown) => T): T | null {
     try {
-        const text = localStorage.getItem(STORAGE_KEY);
-        return text ? sanitise(JSON.parse(text)) : null;
+        const text = localStorage.getItem(key);
+        return text ? clean(JSON.parse(text)) : null;
     } catch {
         return null;
     }
 }
 
-let selection: Selection = readSaved() ?? sanitise(null);
+function store(key: string, value: unknown) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch { /* storage may be unavailable (private window) — the choice then just lives until reload */ }
+}
+
+let selection: Selection = readStored(STORAGE_KEY, sanitise) ?? sanitise(null);
+let leaders: Record<string, string> = readStored(LEADERS_STORAGE_KEY, sanitiseLeaders) ?? sanitiseLeaders(null);
 
 function def(slot: HeroSlug): HeroDef {
     const ch = characters.find(c => c.id === selection[slot]) ?? characters[0];
@@ -101,19 +96,26 @@ export const RosterConfig = {
 
     /** The slot of a department, from the name as written in the sheet; null if it is not one of ours. */
     heroSlugForRop(ropName: string): HeroSlug | null {
-        const exact = mapping[ropName];
-        if (exact) return exact;
-        const folded = normalise(ropName);
-        const hit = normalisedMapping.get(folded);
-        if (hit) return hit;
-        // A full CRM name («АП_НП_ОУ_Ульяновск_ВШ6_ГБ») is recognised by its «ВШ<число>» part.
-        const m = /(?:^|[^А-ЯЁ0-9])ВШ(\d+)(?![0-9])/.exec(folded);
-        return m ? slotByNumber.get(m[1]) ?? null : null;
+        return slotForGroup(ropName) as HeroSlug | null;
     },
 
-    /** The short code shown on the leaderboard («ВШ5»). */
+    /** The short code of a department («ВШ5»). */
     ropNameForSlug(slug: HeroSlug): string | undefined {
-        return labels[slug];
+        return groupCode(slug);
+    },
+
+    /** The nameplate (and leaderboard) text of a department: «ВШ1 • Измайлова И.». */
+    plateText(slug: HeroSlug): string {
+        return plateText(slug, leaders);
+    },
+
+    /** Applies the group leaders' names coming from the backend. Returns the slots whose name changed. */
+    applyLeaders(raw: unknown): HeroSlug[] {
+        const next = sanitiseLeaders(raw);
+        const changed = GROUP_SLOTS.filter(s => next[s] !== leaders[s]) as HeroSlug[];
+        leaders = next;
+        if (changed.length > 0) store(LEADERS_STORAGE_KEY, next);
+        return changed;
     },
 
     heroDef(slug: HeroSlug): HeroDef | undefined {
@@ -137,9 +139,7 @@ export const RosterConfig = {
         const next = sanitise(raw);
         const changed = HERO_SLUGS.filter(s => next[s] !== selection[s]);
         selection = next;
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch { /* storage may be unavailable (private window) — the choice then just lives until reload */ }
+        store(STORAGE_KEY, next);
         return changed;
     },
 };

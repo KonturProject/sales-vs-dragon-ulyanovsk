@@ -71,7 +71,14 @@ export const HERO = {
     ],
     /** Hero textures are 1/0.75 times their on-screen size (see tools/build-characters.py). */
     TEXTURE_SCALE: 0.75,
-    HIT_STAGGER_MS: 300,
+    /** Height of a standing hero's texture, px — every character is built to it (tools/build-characters.py, TARGET_H). */
+    TEXTURE_HEIGHT: 290,
+    /**
+     * When one poll brings money for several departments (an import of a whole export, say), the heroes strike one
+     * after another, left to right, this far apart: the next one sets off as the previous one's blow has landed and
+     * it turns back — never everybody at once.
+     */
+    HIT_STAGGER_MS: 1200,
     ...HIT_PHASES,
     /** From the sale event to the blow landing on the dragon — hit effects, sound and the dragon's reaction key off this. */
     IMPACT_MS: HIT_PHASES.WINDUP_MS + HIT_PHASES.RUN_MS,
@@ -88,6 +95,12 @@ export const HERO = {
     WINDUP_BACK: 24,
     /** Branch lead stands apart from the department heroes, far left, ~12 % taller than a front-row hero (so it stands out, but not too much). */
     LEAD: { x: 100, y: 540, scale: 0.86 },
+    /**
+     * Nameplate «ВШ1 • Измайлова И.» of each department (objects/NamePlate.ts): over the head for the back row, under
+     * the feet for the front row — so a plate never covers a neighbour of the other row. It stays at the slot while
+     * the hero runs off to strike. GAP — px between the plate and the head / the feet.
+     */
+    PLATE_GAP: 5,
 } as const;
 
 /**

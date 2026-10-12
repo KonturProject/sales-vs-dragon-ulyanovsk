@@ -7,7 +7,7 @@ export interface RuntimeConfig {
 export class BackendError extends Error {
     constructor(
         public code: string,
-        public detail?: { field?: string; retryAfterSec?: number },
+        public detail?: { field?: string; retryAfterSec?: number; row?: number },
     ) {
         super(code);
     }
@@ -47,7 +47,7 @@ export async function callBackend<T extends object = Record<string, never>>(
     const config = await loadConfig();
     if (config.useMock || !config.appsScriptUrl) throw new BackendError('demo');
 
-    let data: { ok: boolean; error?: string; field?: string; retryAfterSec?: number } & T;
+    let data: { ok: boolean; error?: string; field?: string; retryAfterSec?: number; row?: number } & T;
     try {
         const res = await fetch(config.appsScriptUrl, {
             method: 'POST',
@@ -59,12 +59,18 @@ export async function callBackend<T extends object = Record<string, never>>(
         throw new BackendError('network');
     }
 
-    if (!data.ok) throw new BackendError(data.error ?? 'unknown', { field: data.field, retryAfterSec: data.retryAfterSec });
+    if (!data.ok) throw new BackendError(data.error ?? 'unknown', { field: data.field, retryAfterSec: data.retryAfterSec, row: data.row });
     return data;
 }
 
 /** Public, unauthenticated status (aggregates only) — same endpoint the game polls. */
-export async function fetchPublicStatus(): Promise<{ ok: boolean; plan: number; totalThisWeek: number; roster?: Record<string, string> | null } | null> {
+export async function fetchPublicStatus(): Promise<{
+    ok: boolean;
+    plan: number;
+    totalThisWeek: number;
+    roster?: Record<string, string> | null;
+    leaders?: Record<string, string> | null;
+} | null> {
     try {
         const config = await loadConfig();
         const url = config.useMock || !config.appsScriptUrl ? 'assets/mock/mock-status.json' : config.appsScriptUrl;

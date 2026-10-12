@@ -8,6 +8,10 @@ dist-ssr
 .agents/
 skills-lock.json
 
+# CRM exports hold clients' names and INNs — never commit one (test with a synthetic file)
+*.xlsx
+*.xls
+
 # local helper output
 npm-ci.log
 __pycache__/

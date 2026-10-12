@@ -401,7 +401,7 @@ button.anim-btn:hover {
 
 .roster-row {
     display: grid;
-    grid-template-columns: 64px 1fr 56px;
+    grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) 56px;
     align-items: center;
     gap: 12px;
     padding: 8px 12px;
@@ -420,8 +420,15 @@ button.anim-btn:hover {
     font-weight: 700;
 }
 
-.roster-row select {
+.roster-row select,
+.roster-row .leader-input {
     margin: 0;
+    min-width: 0;
+}
+
+.leader-input {
+    padding: 11px 12px;
+    font-size: 15px;
 }
 
 .roster-row img,
@@ -471,6 +478,82 @@ button.anim-btn:hover {
     width: 100%;
 }
 
+/* ---------------------------------------------------------------- import */
+
+.file-pick {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0;
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+}
+
+/* The native input is kept (keyboard, screen readers) but drawn as the button next to it. */
+.file-pick input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.file-btn {
+    padding: 11px 16px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--cyan), var(--green));
+    color: #03151a;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.file-pick input:focus-visible + .file-btn {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+}
+
+.file-name {
+    font-family: 'Manrope', Arial, sans-serif;
+    font-size: 14px;
+    color: var(--text-dim);
+    overflow-wrap: anywhere;
+}
+
+#import-preview[hidden] {
+    display: none;
+}
+
+#import-table tfoot td {
+    font-weight: 800;
+    border-bottom: none;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* A group that would end up with less than the sheet holds now (cancelled payments, or missing from the export). */
+#import-table tr.drop td {
+    color: #ffb36b;
+}
+
+.notes {
+    margin: 14px 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-dim);
+}
+
+.notes li + li {
+    margin-top: 6px;
+}
+
+.notes li.warn {
+    color: #ffb36b;
+}
+
 /* ---------------------------------------------------- narrow screens */
 
 @media (max-width: 520px) {
@@ -495,5 +578,29 @@ button.anim-btn:hover {
 
     .btn-grid {
         grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    }
+
+    /* Hero row on a phone: code + portrait, then the hero list and the leader's name each on a line of their own. */
+    .roster-row {
+        grid-template-columns: 1fr 52px;
+    }
+
+    .roster-row .slot-name {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    .roster-row img {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    .roster-row select,
+    .roster-row .leader-input {
+        grid-column: 1 / -1;
+    }
+
+    .file-pick {
+        flex-wrap: wrap;
     }
 }

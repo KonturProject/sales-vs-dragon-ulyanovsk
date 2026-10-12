@@ -51,6 +51,11 @@ export interface RosterChangedPayload {
     slots: string[];
 }
 
+/** The admin renamed the group leaders of some department slots (their nameplates and leaderboard rows). */
+export interface LeadersChangedPayload {
+    slots: string[];
+}
+
 /**
  * Single shared emitter connecting DataPollingService (data layer) to the
  * Phaser scenes (PenScene draws hits and the dragon, HUDScene draws the bar and the victory banner).
@@ -66,6 +71,7 @@ export const GameEvents = {
     DRAGON_DEFEATED: 'dragon:defeated',
     ADMIN_COMMAND: 'admin:command',
     ROSTER_CHANGED: 'roster:changed',
+    LEADERS_CHANGED: 'roster:leaders-changed',
     /** Someone is breathing (the live-stand rotation): the game should draw at least at the ambient frame rate. */
     LIVE_STAND: 'stand:live',
 } as const;
