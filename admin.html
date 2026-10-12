@@ -5,9 +5,9 @@
     <link rel="icon" type="image/png" href="./favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Админка — Победи дракона</title>
-  <script type="module" crossorigin src="./assets/admin-eFtIEHDG.js"></script>
-  <link rel="modulepreload" crossorigin href="./assets/ropMapping-CG2V-q0t.js">
-  <link rel="stylesheet" crossorigin href="./assets/admin-DUIQiAsp.css">
+  <script type="module" crossorigin src="./assets/admin-CDqZjPY4.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/Groups-CdX0y3Xg.js">
+  <link rel="stylesheet" crossorigin href="./assets/admin-DFE84yB4.css">
 </head>
 <body>
     <div class="scene-glow"></div>
@@ -26,6 +26,7 @@
                 <button type="button" class="tab-btn active" data-tab="plan" role="tab">План</button>
                 <button type="button" class="tab-btn" data-tab="table" role="tab">Таблица</button>
                 <button type="button" class="tab-btn" data-tab="add" role="tab">Внести оплату</button>
+                <button type="button" class="tab-btn" data-tab="import" role="tab">Импорт</button>
                 <button type="button" class="tab-btn" data-tab="heroes" role="tab">Герои</button>
                 <button type="button" class="tab-btn" data-tab="anim" role="tab">Анимации</button>
                 <button type="button" class="tab-btn" data-tab="pin" role="tab">PIN-код</button>
@@ -50,7 +51,7 @@
                 <div id="table-summary" class="chips"></div>
                 <div class="table-wrap">
                     <table id="sales-table">
-                        <thead><tr><th>Строка</th><th>Дата</th><th>Отдел</th><th class="num">Сумма, ₽</th></tr></thead>
+                        <thead><tr><th>Строка</th><th>Дата</th><th>Отдел</th><th class="num">Сумма, ₽</th><th>№ счёта</th></tr></thead>
                         <tbody></tbody>
                     </table>
                 </div>
@@ -70,11 +71,34 @@
                 <p class="hint">Это настоящая запись в листе «Sales» таблицы «победи дракона»: сдвинет итоги недели, а на экранах герой отдела ударит по дракону (если вносите «сейчас»).</p>
             </section>
 
+            <!-- Импорт -->
+            <section class="tab" data-tab-panel="import" hidden>
+                <p class="hint">Выгрузка «Детальные данные по оплаченным счетам» (.xlsx). Файл читается прямо здесь, в браузере: в таблицу уходят только дата оплаты, сумма, группа и номер счёта — клиенты, ИНН и продукты никуда не отправляются.</p>
+                <p class="hint">Файл заменяет оплаты за свой период — с первой по последнюю дату оплаты в нём, включая внесённые вручную. Поэтому загружайте выгрузку по всем группам сразу; повторная загрузка той же или более свежей выгрузки ничего не задвоит.</p>
+                <label class="file-pick">
+                    <input id="import-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                    <span class="file-btn">Выбрать файл…</span>
+                    <span id="import-file-name" class="file-name">файл не выбран</span>
+                </label>
+                <div id="import-preview" hidden>
+                    <div id="import-summary" class="chips"></div>
+                    <div class="table-wrap">
+                        <table id="import-table">
+                            <thead><tr><th>Группа</th><th class="num">Счетов</th><th class="num">Сейчас за период, ₽</th><th class="num">Станет, ₽</th></tr></thead>
+                            <tbody></tbody>
+                            <tfoot></tfoot>
+                        </table>
+                    </div>
+                    <ul id="import-notes" class="notes"></ul>
+                    <button type="button" id="import-run" class="primary-btn">Загрузить в таблицу<span class="btn-arrow">→</span></button>
+                </div>
+            </section>
+
             <!-- Герои -->
             <section class="tab" data-tab-panel="heroes" hidden>
-                <p class="hint">Кто стоит на экране за каждую группу и кто лидер филиала. Выберите из списка (или нажмите на героя в галерее ниже — он встанет на выбранное место) и сохраните: экраны подхватят замену в течение ~15 секунд. Таблицу и суммы это не затрагивает.</p>
+                <p class="hint">Кто стоит на экране за каждую группу, чьё имя на табличке группы («ВШ1 • Фамилия И.» — так же в рейтинге слева сверху) и кто лидер филиала. Героя выберите из списка (или нажмите на героя в галерее ниже — он встанет на выбранное место), РГ впишите в поле — можно вставить полное ФИО, сохранится «Фамилия И.». Сохраните: экраны подхватят изменения в течение ~15 секунд. Таблицу и суммы это не затрагивает.</p>
                 <div id="roster-rows" class="roster-rows"></div>
-                <button type="button" id="roster-save" class="primary-btn">Сохранить героев<span class="btn-arrow">→</span></button>
+                <button type="button" id="roster-save" class="primary-btn">Сохранить героев и РГ<span class="btn-arrow">→</span></button>
                 <h2>Все герои</h2>
                 <div id="roster-gallery" class="gallery"></div>
             </section>
