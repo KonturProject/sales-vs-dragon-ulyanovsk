@@ -5,9 +5,11 @@
     <link rel="icon" type="image/png" href="./favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Админка — Победи дракона</title>
-  <script type="module" crossorigin src="./assets/admin-CDqZjPY4.js"></script>
-  <link rel="modulepreload" crossorigin href="./assets/Groups-CdX0y3Xg.js">
-  <link rel="stylesheet" crossorigin href="./assets/admin-DFE84yB4.css">
+  <script type="module" crossorigin src="./assets/admin-DLXDp-Np.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/Groups-BVkKDd_n.js">
+  <link rel="modulepreload" crossorigin href="./assets/api-DdbDjl0g.js">
+  <link rel="modulepreload" crossorigin href="./assets/heroRoster-BEa61_vJ.js">
+  <link rel="stylesheet" crossorigin href="./assets/api-CyioXr0k.css">
 </head>
 <body>
     <div class="scene-glow"></div>
@@ -149,6 +151,16 @@
                     <button type="submit">Сменить PIN<span class="btn-arrow">→</span></button>
                 </form>
                 <p class="hint">После смены прежний PIN перестанет работать. После нескольких неверных вводов подряд вход блокируется на 10 минут.</p>
+
+                <h2>PIN-коды руководителей групп</h2>
+                <p class="hint">У каждого РГ свой PIN для страницы <a id="rg-link" href="rg.html" target="_blank" rel="noopener">«Оплаты группы»</a> — там можно только внести оплату своей группы; группу страница узнаёт по PIN. PIN создаётся случайно и показывается здесь один раз: скопируйте и раздайте РГ. Новый PIN сразу отменяет прежний (например, если старый кто-то узнал).</p>
+                <div id="group-pins" class="group-pins"></div>
+                <button type="button" id="group-pins-all" class="primary-btn">Создать PIN для всех групп<span class="btn-arrow">→</span></button>
+                <div id="group-pins-out" class="pin-out" hidden>
+                    <pre id="group-pins-text"></pre>
+                    <button type="button" id="group-pins-copy" class="ghost">Скопировать</button>
+                    <p class="hint">Эти PIN больше нигде не показываются (хранится только их отпечаток) — после выхода из админки их не увидеть. Потеряли — создайте новый.</p>
+                </div>
             </section>
 
             <button type="button" id="logout" class="ghost logout">Выйти</button>
