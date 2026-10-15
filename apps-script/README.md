@@ -27,6 +27,17 @@ Standalone-проект (не привязан к таблице через Exte
 | `changePin` | `pin, newPin` | меняет PIN (4–12 цифр), хранится хешем `salt$sha256` |
 | `command` | `pin, type, args?, requestId?` | анимация на экранах: `hit {rop, amount}`, `fall {hero: random\|slot_1…slot_6, mode}`, `wake`, `growl`, `confetti`, `celebrate`. В таблицу не пишется |
 | `setRoster` | `pin, roster?, leaders?` | кто стоит в слотах (`slot_1…slot_6`, `lead`): `{slot_1: 'viking', lead: 'businesswoman'}` и/или РГ на табличках групп: `{slot_1: 'Измайлова И.'}` (буквы, пробел, точка, дефис, до 40 знаков; пустая строка — на табличке только код группы). Меняются только присланные слоты; хранится в Script Properties (`ROSTER`, `LEADERS`), в таблицу не пишется |
+| `setGroupPins` | `pin, pins` | PIN-коды руководителей групп: `{slot_1: '123456', …}` (6–12 цифр, у групп разные и не равны админскому). Админка придумывает их случайно и показывает один раз; хранится только солёный хеш (`GROUP_PINS`). Новый PIN сразу отменяет прежний и снимает блокировку страницы РГ |
+| `groupPinStatus` | `pin` | у каких групп PIN задан (`{slot_1: true, …}`) — сами PIN и хеши не отдаются |
+
+Страница руководителей групп (`rg.html`) вместо `pin` шлёт **`groupPin`** — группа определяется по нему, выбрать другую нельзя; админский PIN тут не работает, а PIN группы не открывает ни одно действие админки:
+
+| `action` | Параметры | Что делает |
+|---|---|---|
+| `groupLogin` | `groupPin` | какая группа (`group: {slot, code, leader}`) и её сумма за неделю (`week: {start, today, total}`) |
+| `groupAddSale` | `groupPin, amount, date?, requestId?` | оплата своей группы в первую свободную строку (как `addSale`); дата — пусто (сейчас) или момент текущей недели не позже текущего. Ответ — как у `groupLogin` + `added` |
+
+У неверных PIN групп свой счётчик: после 5 ошибок за 10 минут страница РГ блокируется на 10 минут, админку это не задевает.
 
 Ответ — `{ok: true, …}` или `{ok: false, error}`: `invalid_pin`, `locked` (+`retryAfterSec`), `bad_request` (+`field`, у `importSales` ещё `row` — номер плохой записи), `server_error` (+`detail`). После 5 неверных PIN за 10 минут API блокируется на 10 минут.
 
@@ -34,7 +45,7 @@ Standalone-проект (не привязан к таблице через Exte
 
 ```bash
 cd game
-npm run test:backend      # 37 тестов: PIN, блокировка, addSale, importSales, listSales, changePin, команды, выбор героев и РГ
+npm run test:backend      # 45 тестов: PIN, блокировка, addSale, importSales, listSales, changePin, команды, выбор героев и РГ, PIN-коды и страница РГ
 npm run mock-backend      # тот же Code.gs на http://localhost:8787/exec (PIN 1234, данные в памяти)
 ```
 

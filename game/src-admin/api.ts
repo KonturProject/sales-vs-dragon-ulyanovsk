@@ -44,6 +44,19 @@ export async function callBackend<T extends object = Record<string, never>>(
     pin: string,
     payload: Record<string, unknown> = {},
 ): Promise<T> {
+    return post<T>({ action, pin, ...payload });
+}
+
+/** The group leaders' page (rg.html): the same, signed with a group PIN — the backend knows the group from it. */
+export async function callAsGroup<T extends object = Record<string, never>>(
+    action: string,
+    groupPin: string,
+    payload: Record<string, unknown> = {},
+): Promise<T> {
+    return post<T>({ action, groupPin, ...payload });
+}
+
+async function post<T extends object>(body: Record<string, unknown>): Promise<T> {
     const config = await loadConfig();
     if (config.useMock || !config.appsScriptUrl) throw new BackendError('demo');
 
@@ -52,7 +65,7 @@ export async function callBackend<T extends object = Record<string, never>>(
         const res = await fetch(config.appsScriptUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action, pin, ...payload }),
+            body: JSON.stringify(body),
         });
         data = await res.json();
     } catch {

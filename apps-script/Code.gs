@@ -26,6 +26,11 @@
  *     { action: 'command',     pin, type, args?, requestId? }         show an animation on the displays
  *     { action: 'setRoster',   pin, roster?, leaders? }               which character stands in which slot (see ROSTER_SLOTS),
  *                                                                     the group leaders' names on the stage nameplates
+ *     { action: 'setGroupPins', pin, pins }                          the group leaders' PINs { slot_1: '123456', … }
+ *     { action: 'groupPinStatus', pin }                              which groups have a PIN
+ *   The group leaders' page (rg.html) signs in with its group PIN instead — the group is known from the PIN:
+ *     { action: 'groupLogin',   groupPin }                           which group, this week's total
+ *     { action: 'groupAddSale', groupPin, amount, date?, requestId? }  a payment of that group (this week, up to now)
  *   Commands are pure visual triggers: they live in Script Properties, never in the spreadsheet,
  *   and never touch "Sales"/"Settings".
  *
@@ -55,6 +60,8 @@ var ROSTER_SLOTS = ['slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6', 
 /** JSON { slot: 'Фамилия И.' } — the group leader shown on each department's nameplate, edited in the admin page. */
 var LEADERS_PROPERTY_KEY = 'LEADERS';
 var LEADER_SLOTS = ['slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6'];
+/** JSON { slot: 'salt$sha256' } — the group leaders' PINs for rg.html (the group is known from the PIN). Same order as DEPARTMENT_CODES. */
+var GROUP_PINS_PROPERTY_KEY = 'GROUP_PINS';
 
 /** Header of the "Sales" column that holds the invoice number of an imported payment (added by the first import). */
 var INVOICE_HEADER = 'Invoice';
@@ -156,21 +163,31 @@ function doPost(e) {
   try {
     // The first version of the admin page sent { pin, plan } with no action.
     var action = body.action || (body.plan !== undefined ? 'setPlan' : '');
+    var groupHandler = GROUP_ACTIONS_.hasOwnProperty(action) ? GROUP_ACTIONS_[action] : null;
     var handler = ACTIONS_.hasOwnProperty(action) ? ACTIONS_[action] : null;
-    if (!handler) return jsonResponse_({ ok: false, error: 'bad_request', detail: 'unknown action' });
+    if (!handler && !groupHandler) return jsonResponse_({ ok: false, error: 'bad_request', detail: 'unknown action' });
 
-    var denied = authorize_(body.pin);
-    if (denied) return jsonResponse_(denied);
+    // The group leaders' page signs in with a group PIN (`groupPin`) and can only do its own few things;
+    // everything else needs the admin PIN (`pin`).
+    var groupSlot = '';
+    if (groupHandler) {
+      var auth = authorizeGroup_(body.groupPin);
+      if (auth.denied) return jsonResponse_(auth.denied);
+      groupSlot = auth.slot;
+    } else {
+      var denied = authorize_(body.pin);
+      if (denied) return jsonResponse_(denied);
+    }
 
     // A retried request (double click, flaky connection) must not run twice.
     var requestId = body.requestId ? String(body.requestId).slice(0, 64) : '';
-    var cacheKey = requestId ? 'req_' + action + '_' + requestId : '';
+    var cacheKey = requestId ? 'req_' + action + '_' + groupSlot + '_' + requestId : '';
     if (cacheKey) {
       var earlier = CacheService.getScriptCache().get(cacheKey);
       if (earlier) return jsonResponse_(JSON.parse(earlier));
     }
 
-    var result = handler(body);
+    var result = groupHandler ? groupHandler(body, groupSlot) : handler(body);
     if (cacheKey && result.ok) CacheService.getScriptCache().put(cacheKey, JSON.stringify(result), REQUEST_CACHE_SEC);
     return jsonResponse_(result);
   } catch (err) {
@@ -187,7 +204,15 @@ var ACTIONS_ = {
   importSales: actionImportSales_,
   changePin: actionChangePin_,
   command: actionCommand_,
-  setRoster: actionSetRoster_
+  setRoster: actionSetRoster_,
+  setGroupPins: actionSetGroupPins_,
+  groupPinStatus: actionGroupPinStatus_
+};
+
+/** The group leaders' page (rg.html): `groupPin` instead of `pin`; the handler also gets the leader's slot. */
+var GROUP_ACTIONS_ = {
+  groupLogin: actionGroupLogin_,
+  groupAddSale: actionGroupAddSale_
 };
 
 /** Manual test helper — run from the editor, inspect via View > Logs. */
@@ -255,29 +280,125 @@ function actionAddSale_(body) {
   if (!rop || amount === null || !date) return badRequest_(!rop ? 'rop' : amount === null ? 'amount' : 'date');
 
   return withLock_(function () {
-    var sheet = getSalesSheet_();
-    var cols = salesColumns_(sheet);
-
-    // Not appendRow(): that goes below the last row holding *anything*, and in the real sheet other columns
-    // (the drop-down list in F, names in D) reach further down than the sales do — which would leave a gap.
-    // Take the first row after the last one with a Date/Amount/ROP, and write only those three cells so the
-    // neighbouring columns are left alone.
-    var values = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), sheet.getLastColumn()).getValues();
-    var last = 1;
-    for (var i = 1; i < values.length; i++) {
-      if (!isBlankSale_(values[i], cols)) last = i + 1;
-    }
-    var target = last + 1;
-    sheet.getRange(target, cols.date + 1).setValue(date);
-    sheet.getRange(target, cols.amount + 1).setValue(amount);
-    sheet.getRange(target, cols.rop + 1).setValue(rop);
-
-    return {
-      ok: true,
-      added: { row: target, date: formatSaleDate_(date, getSpreadsheet_().getSpreadsheetTimeZone()), amount: amount, rop: rop },
-      status: computeWeeklyStatus_()
-    };
+    return { ok: true, added: appendSale_(date, amount, rop), status: computeWeeklyStatus_() };
   });
+}
+
+/**
+ * Writes one payment into the first free sales row; call it under withLock_.
+ * Not appendRow(): that goes below the last row holding *anything*, and where other columns reach further down than
+ * the sales do it would leave a gap. Take the first row after the last one with a Date/Amount/ROP, and write only
+ * those three cells so the neighbouring columns are left alone.
+ */
+function appendSale_(date, amount, rop) {
+  var sheet = getSalesSheet_();
+  var cols = salesColumns_(sheet);
+  var values = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), sheet.getLastColumn()).getValues();
+  var last = 1;
+  for (var i = 1; i < values.length; i++) {
+    if (!isBlankSale_(values[i], cols)) last = i + 1;
+  }
+  var target = last + 1;
+  sheet.getRange(target, cols.date + 1).setValue(date);
+  sheet.getRange(target, cols.amount + 1).setValue(amount);
+  sheet.getRange(target, cols.rop + 1).setValue(rop);
+  return { row: target, date: formatSaleDate_(date, getSpreadsheet_().getSpreadsheetTimeZone()), amount: amount, rop: rop };
+}
+
+/* ------------------------------------------------------ group leaders' page */
+
+/** What the page shows after sign-in: which group, the leader's name if edited in the admin page, this week so far. */
+function actionGroupLogin_(body, slot) {
+  return groupView_(slot, { ok: true });
+}
+
+/**
+ * A payment of the leader's own group — the group comes from the PIN, never from the request. The date may be any
+ * moment of the current week up to now (empty = now): a forgotten payment can be added, past weeks and the future
+ * cannot be touched.
+ */
+function actionGroupAddSale_(body, slot) {
+  var amount = validateAmount_(body.amount);
+  if (amount === null) return badRequest_('amount');
+  var date = parseSaleDate_(body.date);
+  if (!date) return badRequest_('date');
+  var bounds = getWeekBounds_(new Date(), getSpreadsheet_().getSpreadsheetTimeZone());
+  if (date < bounds.start || date.getTime() > Date.now() + 60000) return badRequest_('date');
+
+  var code = groupCodeForSlot_(slot);
+  return withLock_(function () {
+    return groupView_(slot, { ok: true, added: appendSale_(date, amount, code) });
+  });
+}
+
+function groupCodeForSlot_(slot) {
+  return DEPARTMENT_CODES[LEADER_SLOTS.indexOf(slot)];
+}
+
+/** Adds { group: {slot, code, leader}, week: {start, today, total} } to a group-page answer. */
+function groupView_(slot, res) {
+  var code = groupCodeForSlot_(slot);
+  var leaders = readLeaders_() || {};
+  var status = computeWeeklyStatus_();
+  var total = 0;
+  for (var i = 0; i < status.byRop.length; i++) {
+    if (status.byRop[i].ropName === code) total += status.byRop[i].amount;
+  }
+  res.group = { slot: slot, code: code, leader: leaders.hasOwnProperty(slot) ? leaders[slot] : null };
+  res.week = { start: status.weekStart, today: Utilities.formatDate(new Date(), getSpreadsheet_().getSpreadsheetTimeZone(), 'yyyy-MM-dd'), total: total };
+  return res;
+}
+
+/* --------------------------------------------- group PINs (admin page side) */
+
+/**
+ * Sets the group leaders' PINs: { pins: { slot_1: '123456', … } } — only the slots sent change; a new PIN replaces the
+ * old one at once. The admin page makes them up at random and shows them to the admin once; here only a salted hash
+ * is kept. A PIN must be 6–12 digits and differ from the other groups' PINs and from the admin PIN.
+ */
+function actionSetGroupPins_(body) {
+  var input = body.pins;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return badRequest_('pins');
+  var changes = {};
+  var seen = {};
+  for (var slot in input) {
+    if (!input.hasOwnProperty(slot)) continue;
+    var pin = String(input[slot] === undefined || input[slot] === null ? '' : input[slot]);
+    if (LEADER_SLOTS.indexOf(slot) < 0 || !/^[0-9]{6,12}$/.test(pin)) return badRequest_('pins');
+    if (seen[pin] || verifyPin_(pin)) return badRequest_('pins_duplicate');
+    seen[pin] = true;
+    changes[slot] = pin;
+  }
+  if (Object.keys(changes).length === 0) return badRequest_('pins');
+
+  return withLock_(function () {
+    var pins = readGroupPins_();
+    // A new PIN must not open another group that keeps its current PIN.
+    for (var s in changes) {
+      var owner = groupSlotForPin_(changes[s]);
+      if (owner && !changes.hasOwnProperty(owner)) return badRequest_('pins_duplicate');
+    }
+    for (var slotKey in changes) {
+      var salt = Utilities.getUuid();
+      pins[slotKey] = salt + '$' + hashPin_(salt, changes[slotKey]);
+    }
+    PropertiesService.getScriptProperties().setProperty(GROUP_PINS_PROPERTY_KEY, JSON.stringify(pins));
+    // Like a changed admin PIN: new PINs (e.g. after someone tried to guess) lift the group page's lock.
+    CacheService.getScriptCache().remove('group_pin_fails');
+    CacheService.getScriptCache().remove('group_pin_lock_until');
+    return { ok: true, set: groupPinsSet_(pins) };
+  });
+}
+
+/** Which groups have a PIN (true/false per slot) — never the PINs or their hashes. */
+function actionGroupPinStatus_(body) {
+  return { ok: true, set: groupPinsSet_(readGroupPins_()) };
+}
+
+function groupPinsSet_(pins) {
+  var set = {};
+  for (var i = 0; i < LEADER_SLOTS.length; i++) set[LEADER_SLOTS[i]] = !!pins[LEADER_SLOTS[i]];
+  return set;
 }
 
 /**
@@ -399,6 +520,7 @@ function actionChangePin_(body) {
   var newPin = String(body.newPin === undefined ? '' : body.newPin);
   if (!/^[0-9]{4,12}$/.test(newPin)) return badRequest_('newPin');
   if (newPin === String(body.pin)) return badRequest_('newPin_same');
+  if (groupSlotForPin_(newPin)) return badRequest_('newPin_group');
   return withLock_(function () {
     storePin_(newPin);
     return { ok: true };
@@ -723,20 +845,58 @@ function storePin_(pin) {
   CacheService.getScriptCache().remove('pin_lock_until');
 }
 
-function lockRemainingSec_() {
-  var until = Number(CacheService.getScriptCache().get('pin_lock_until')) || 0;
+/** `prefix` — 'pin' (the admin page) or 'group_pin' (the group leaders' page): each has its own failure count and lock. */
+function lockRemainingSec_(prefix) {
+  var until = Number(CacheService.getScriptCache().get((prefix || 'pin') + '_lock_until')) || 0;
   return until > Date.now() ? Math.ceil((until - Date.now()) / 1000) : 0;
 }
 
-function recordPinFailure_() {
+function recordPinFailure_(prefix) {
+  prefix = prefix || 'pin';
   var cache = CacheService.getScriptCache();
-  var fails = (Number(cache.get('pin_fails')) || 0) + 1;
+  var fails = (Number(cache.get(prefix + '_fails')) || 0) + 1;
   if (fails >= MAX_PIN_FAILURES) {
-    cache.put('pin_lock_until', String(Date.now() + PIN_LOCK_SEC * 1000), PIN_LOCK_SEC + 60);
-    cache.remove('pin_fails');
+    cache.put(prefix + '_lock_until', String(Date.now() + PIN_LOCK_SEC * 1000), PIN_LOCK_SEC + 60);
+    cache.remove(prefix + '_fails');
   } else {
-    cache.put('pin_fails', String(fails), PIN_FAILURE_WINDOW_SEC);
+    cache.put(prefix + '_fails', String(fails), PIN_FAILURE_WINDOW_SEC);
   }
+}
+
+/* ------------------------------------------------------------- group PINs */
+
+/** { slot: 'salt$sha256' } — one PIN per group leader, made in the admin page; the PIN itself is never stored. */
+function readGroupPins_() {
+  return readJsonProperty_(GROUP_PINS_PROPERTY_KEY) || {};
+}
+
+/** The slot whose leader's PIN this is, or '' (the admin PIN is never a group PIN). */
+function groupSlotForPin_(pin) {
+  if (pin === undefined || pin === null) return '';
+  var text = String(pin);
+  if (text.length === 0 || text.length > 32) return '';
+  var pins = readGroupPins_();
+  for (var i = 0; i < LEADER_SLOTS.length; i++) {
+    var stored = pins[LEADER_SLOTS[i]];
+    if (!stored) continue;
+    var parts = String(stored).split('$');
+    if (parts.length === 2 && hashPin_(parts[0], text) === parts[1]) return LEADER_SLOTS[i];
+  }
+  return '';
+}
+
+/** { slot } when the group PIN is right, otherwise { denied: <error response> }. Its own lock: leaders mistyping never lock the admin out. */
+function authorizeGroup_(pin) {
+  var lockedFor = lockRemainingSec_('group_pin');
+  if (lockedFor > 0) return { denied: { ok: false, error: 'locked', retryAfterSec: lockedFor } };
+  var slot = groupSlotForPin_(pin);
+  if (!slot) {
+    recordPinFailure_('group_pin');
+    lockedFor = lockRemainingSec_('group_pin');
+    return { denied: lockedFor > 0 ? { ok: false, error: 'locked', retryAfterSec: lockedFor } : { ok: false, error: 'invalid_pin' } };
+  }
+  CacheService.getScriptCache().remove('group_pin_fails');
+  return { slot: slot };
 }
 
 /* ------------------------------------------------------------------- sheets */

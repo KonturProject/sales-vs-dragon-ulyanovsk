@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src-admin/styles.css">
+    <title>Оплаты группы — Победи дракона</title>
+</head>
+<body>
+    <div class="scene-glow"></div>
+    <div class="admin-card rg-card">
+        <div class="eyebrow">Победи дракона · Ульяновск</div>
+        <h1 id="title">Оплаты группы</h1>
+
+        <form id="pin-form">
+            <label for="pin">PIN-код руководителя группы</label>
+            <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••••" required />
+            <button type="submit">Войти<span class="btn-arrow">→</span></button>
+        </form>
+
+        <div id="panel" hidden>
+            <p id="rg-week" class="current-status"></p>
+            <form id="sale-form">
+                <label for="sale-amount">Сумма оплаты, ₽</label>
+                <input id="sale-amount" type="number" min="1" step="any" inputmode="decimal" placeholder="150000" required />
+                <label for="sale-date">Дата оплаты <span class="optional">(если не сегодня — только эта неделя)</span></label>
+                <input id="sale-date" type="date" />
+                <button type="submit">Внести оплату<span class="btn-arrow">→</span></button>
+            </form>
+            <p class="hint">Оплата сразу попадает в таблицу «победи дракона», а на экранах герой вашей группы бьёт дракона (в течение ~15 секунд). Ошиблись — напишите администратору игры: исправить или удалить запись можно только в таблице.</p>
+            <button type="button" id="logout" class="ghost logout">Выйти</button>
+        </div>
+
+        <p id="status" role="status"></p>
+    </div>
+
+    <script type="module" src="/src-rg/main.ts"></script>
+</body>
+</html>

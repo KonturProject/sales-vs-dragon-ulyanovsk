@@ -52,6 +52,7 @@ function setStatus(text: string, kind: 'ok' | 'error' | '' = '') {
 
 function showLogin(message = '') {
     pin = '';
+    forgetIssuedPins();
     pinInput.value = '';
     panel.hidden = true;
     pinForm.hidden = false;
@@ -61,6 +62,8 @@ function showLogin(message = '') {
 const FIELD_NAMES: Record<string, string> = {
     plan: 'план', rop: 'отдел', amount: 'сумма', date: 'дата', newPin: 'новый PIN', newPin_same: 'новый PIN совпадает со старым',
     roster: 'список героев', leaders: 'имена РГ',
+    pins: 'PIN-коды групп', pins_duplicate: 'PIN совпал с другим PIN — нажмите ещё раз',
+    newPin_group: 'новый PIN совпадает с PIN-кодом руководителя группы',
     period: 'даты оплат в файле (не старше ~года и не в будущем)', rows: 'строки файла',
     type: 'тип команды', args: 'параметры команды',
 };
@@ -132,6 +135,7 @@ function openTab(name: string) {
     if (name === 'plan') loadPlanTab();
     if (name === 'table' && tableStale) loadTable();
     if (name === 'heroes') loadHeroesTab();
+    if (name === 'pin') loadGroupPins();
 }
 
 tabButtons.forEach(b => b.addEventListener('click', () => openTab(b.dataset.tab!)));
@@ -339,6 +343,124 @@ pinChangeForm.addEventListener('submit', async (e) => {
         // A mistyped *current* PIN here is a typo in this form, not a reason to throw the user back to the login screen.
         if (err instanceof BackendError && err.code === 'invalid_pin') setStatus('Текущий PIN указан неверно.', 'error');
         else reportError(err);
+    }
+});
+
+/* ------------------------------------------------- group leaders' PINs */
+
+const groupPinsEl = $<HTMLDivElement>('group-pins');
+const groupPinsAll = $<HTMLButtonElement>('group-pins-all');
+const groupPinsOut = $<HTMLDivElement>('group-pins-out');
+const groupPinsText = $<HTMLPreElement>('group-pins-text');
+const rgUrl = new URL('rg.html', location.href.split('?')[0]).href;
+($('rg-link') as HTMLAnchorElement).href = rgUrl;
+
+/** Which groups have a PIN (from the backend; the PINs themselves are never read back). */
+let groupPinSet: Record<string, boolean> = {};
+/** PINs made in this visit, shown until logout — they exist nowhere else in clear text. */
+let issuedPins: Record<string, string> = {};
+
+function forgetIssuedPins() {
+    issuedPins = {};
+    groupPinsText.textContent = '';
+    groupPinsOut.hidden = true;
+}
+
+/** A random 6-digit PIN that does not start with 0 (easier to type), from the browser's cryptographic generator. */
+function randomPin(): string {
+    const n = new Uint32Array(1);
+    crypto.getRandomValues(n);
+    return String(100000 + (n[0] % 900000));
+}
+
+function renderGroupPins() {
+    groupPinsEl.replaceChildren(...DEPARTMENTS.map(dep => {
+        const row = document.createElement('div');
+        row.className = 'group-pin-row';
+        const name = document.createElement('span');
+        name.textContent = dep.plate;
+        const state = document.createElement('span');
+        state.className = 'meta';
+        state.textContent = issuedPins[dep.slug] ? 'новый PIN ниже' : groupPinSet[dep.slug] ? 'PIN задан' : 'PIN не задан';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ghost';
+        button.textContent = groupPinSet[dep.slug] ? 'Новый PIN' : 'Создать PIN';
+        button.addEventListener('click', () => issueGroupPins([dep.slug]));
+        row.append(name, state, button);
+        return row;
+    }));
+    groupPinsAll.firstChild!.textContent = Object.values(groupPinSet).some(Boolean) ? 'Новые PIN для всех групп' : 'Создать PIN для всех групп';
+
+    const lines = DEPARTMENTS.filter(dep => issuedPins[dep.slug]).map(dep => `${dep.plate} — ${issuedPins[dep.slug]}`);
+    groupPinsText.textContent = lines.length ? `${lines.join('\n')}\n\nСтраница для внесения оплат: ${rgUrl}` : '';
+    groupPinsOut.hidden = lines.length === 0;
+}
+
+async function loadGroupPins() {
+    renderGroupPins();
+    try {
+        const res = await callBackend<{ set: Record<string, boolean> }>('groupPinStatus', pin);
+        groupPinSet = res.set;
+        renderGroupPins();
+    } catch (err) {
+        reportError(err);
+    }
+}
+
+async function issueGroupPins(slots: string[]) {
+    const replaced = slots.filter(s => groupPinSet[s]).map(s => LABELS[s]);
+    const warning = replaced.length === 1
+        ? `Прежний PIN группы ${replaced[0]} сразу перестанет работать — раздайте новый.`
+        : `Прежние PIN групп ${replaced.join(', ')} сразу перестанут работать — раздайте новые.`;
+    if (replaced.length > 0 && !confirm(`Создать ${slots.length === 1 ? 'новый PIN' : 'новые PIN'} для ${slots.map(s => LABELS[s]).join(', ')}?\n\n${warning}`)) return;
+
+    setStatus('Создаю PIN…');
+    groupPinsAll.disabled = true;
+    try {
+        // Distinct within the batch; the backend also refuses a clash with another group's or the admin PIN —
+        // then (practically never) one more try with fresh numbers.
+        for (let attempt = 0; ; attempt++) {
+            const pins: Record<string, string> = {};
+            const used = new Set(Object.entries(issuedPins).filter(([slot]) => !slots.includes(slot)).map(([, p]) => p));
+            for (const slot of slots) {
+                let p = randomPin();
+                while (used.has(p)) p = randomPin();
+                used.add(p);
+                pins[slot] = p;
+            }
+            try {
+                const res = await callBackend<{ set: Record<string, boolean> }>('setGroupPins', pin, { pins });
+                groupPinSet = res.set;
+                issuedPins = { ...issuedPins, ...pins };
+                break;
+            } catch (err) {
+                if (attempt === 0 && err instanceof BackendError && err.detail?.field === 'pins_duplicate') continue;
+                throw err;
+            }
+        }
+        renderGroupPins();
+        setStatus('PIN созданы — скопируйте их ниже и раздайте РГ.', 'ok');
+    } catch (err) {
+        reportError(err);
+    } finally {
+        groupPinsAll.disabled = false;
+    }
+}
+
+groupPinsAll.addEventListener('click', () => issueGroupPins(DEPARTMENTS.map(dep => dep.slug)));
+
+$('group-pins-copy').addEventListener('click', async () => {
+    try {
+        await navigator.clipboard.writeText(groupPinsText.textContent ?? '');
+        setStatus('Скопировано.', 'ok');
+    } catch {
+        // No clipboard access (old browser, not a secure page): select the text so Ctrl+C works.
+        const range = document.createRange();
+        range.selectNodeContents(groupPinsText);
+        getSelection()?.removeAllRanges();
+        getSelection()?.addRange(range);
+        setStatus('Не получилось скопировать автоматически — текст выделен, нажмите Ctrl+C.', 'error');
     }
 });
 

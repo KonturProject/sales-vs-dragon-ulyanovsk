@@ -452,6 +452,112 @@ test('a retried importSales (same requestId) runs once', () => {
     assert.equal(b.salesSheet().setValuesCalls, writes);
 });
 
+/* ------------------------------------------------- group leaders' PINs (rg.html) */
+
+const GROUP_PINS = { slot_1: '111111', slot_2: '222222', slot_3: '333333', slot_4: '444444', slot_5: '555555', slot_6: '101010' };
+
+function withGroupPins() {
+    const b = loadBackend();
+    assert.equal(b.post({ action: 'setGroupPins', pin: PIN, pins: GROUP_PINS }).ok, true);
+    return b;
+}
+
+test('group PINs: set by the admin, stored only as hashes, status shows which groups have one', () => {
+    const b = loadBackend();
+    assert.deepEqual(b.post({ action: 'groupPinStatus', pin: PIN }).set, { slot_1: false, slot_2: false, slot_3: false, slot_4: false, slot_5: false, slot_6: false });
+    const res = b.post({ action: 'setGroupPins', pin: PIN, pins: { slot_1: '111111', slot_6: '101010' } });
+    assert.deepEqual(res, { ok: true, set: { slot_1: true, slot_2: false, slot_3: false, slot_4: false, slot_5: false, slot_6: true } });
+    const stored = b.props.get('GROUP_PINS');
+    assert.ok(!stored.includes('111111') && !stored.includes('101010'), 'no PIN in clear text');
+    assert.ok(!JSON.stringify(b.get()).includes('GROUP') && !JSON.stringify(b.get()).includes(stored.slice(0, 20)), 'nothing of it on the public GET');
+    assert.equal(b.post({ action: 'setGroupPins', pin: 'bad', pins: { slot_2: '222222' } }).error, 'invalid_pin');
+});
+
+test('group PINs: bad slots and PINs, duplicates and the admin PIN are refused', () => {
+    const b = withGroupPins();
+    for (const pins of [null, [], {}, { lead: '999999' }, { slot_7: '999999' }, { slot_1: '12345' }, { slot_1: 'abcdef' }, { slot_1: '1234567890123' }]) {
+        assert.equal(b.post({ action: 'setGroupPins', pin: PIN, pins }).error, 'bad_request', JSON.stringify(pins));
+    }
+    const dup = (pins) => b.post({ action: 'setGroupPins', pin: PIN, pins }).field;
+    assert.equal(dup({ slot_1: '999999', slot_2: '999999' }), 'pins_duplicate', 'two groups, one PIN');
+    assert.equal(dup({ slot_1: '222222' }), 'pins_duplicate', 'the PIN of a group that keeps it');
+    assert.equal(b.post({ action: 'setGroupPins', pin: PIN, pins: { slot_1: '222222', slot_2: '777777' } }).ok, true, 'a swap is fine');
+    b.post({ action: 'changePin', pin: PIN, newPin: '864200' });
+    assert.equal(b.post({ action: 'setGroupPins', pin: '864200', pins: { slot_3: '864200' } }).field, 'pins_duplicate', 'the admin PIN');
+    assert.equal(b.post({ action: 'changePin', pin: '864200', newPin: '777777' }).field, 'newPin_group', 'and the admin PIN cannot become a group PIN');
+});
+
+test('groupLogin: the PIN says which group; it carries this week and the leader once edited', () => {
+    const b = withGroupPins();
+    const res = b.post({ action: 'groupLogin', groupPin: '111111' });
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.group, { slot: 'slot_1', code: 'ВШ1', leader: null });
+    assert.deepEqual(res.week, { start: '2026-09-21', today: '2026-09-23', total: 400000 + 120000 });
+    assert.deepEqual(b.post({ action: 'groupLogin', groupPin: '101010' }).group.code, 'ВШ10');
+    b.post({ action: 'setRoster', pin: PIN, leaders: { slot_6: 'Бордачева В.' } });
+    assert.equal(b.post({ action: 'groupLogin', groupPin: '101010' }).group.leader, 'Бордачева В.');
+});
+
+test('group PINs open only the group page, and the admin PIN does not open it', () => {
+    const b = withGroupPins();
+    assert.equal(b.post({ action: 'groupLogin', groupPin: PIN }).error, 'invalid_pin', 'the admin PIN is not a group PIN');
+    assert.equal(b.post({ action: 'groupLogin', pin: '111111' }).error, 'invalid_pin', 'a group PIN must come as groupPin');
+    const sheet = JSON.stringify(b.salesRows()) + JSON.stringify(b.settingsRows());
+    for (const action of ['login', 'listSales', 'setPlan', 'importSales', 'setRoster', 'setGroupPins', 'addSale']) {
+        // Wrong admin PINs: refused, and from the fifth one on the admin API is locked.
+        assert.ok(['invalid_pin', 'locked'].includes(b.post({ action, pin: '111111', plan: 1, rop: 'ВШ1', amount: 1 }).error), action);
+    }
+    assert.equal(JSON.stringify(b.salesRows()) + JSON.stringify(b.settingsRows()), sheet);
+});
+
+test('groupAddSale writes a payment of the PIN\'s own group, whatever group the request names', () => {
+    const b = withGroupPins();
+    const res = b.post({ action: 'groupAddSale', groupPin: '444444', amount: 75000, rop: 'ВШ1', requestId: 'g1' });
+    assert.equal(res.ok, true);
+    assert.equal(res.added.rop, 'ВШ6');
+    assert.equal(res.added.amount, 75000);
+    assert.equal(res.week.total, 75000);
+    assert.equal(res.group.code, 'ВШ6');
+    const byRop = Object.fromEntries(b.get().byRop.map(r => [r.ropName, r.amount]));
+    assert.equal(byRop['ВШ6'], 75000);
+    assert.deepEqual(b.post({ action: 'groupAddSale', groupPin: '444444', amount: 75000, requestId: 'g1' }), res, 'a retry adds nothing');
+    assert.equal(b.post({ action: 'listSales', pin: PIN }).sales.filter(s => s.rop === 'ВШ6').length, 1);
+});
+
+test('groupAddSale: this week up to now only; bad amounts refused', () => {
+    const b = withGroupPins(); // fake now: Wed 2026-09-23 10:00, week from Mon 2026-09-21
+    const add = (extra) => b.post({ action: 'groupAddSale', groupPin: '222222', amount: 1000, ...extra });
+    assert.equal(add({ date: '2026-09-21' }).added.date, '2026-09-21', 'Monday of this week');
+    assert.equal(add({ date: '2026-09-23T09:30' }).added.date, '2026-09-23 09:30', 'earlier today');
+    assert.equal(add({}).ok, true, 'now');
+    for (const date of ['2026-09-20', '2026-09-23T11:00', '2026-09-24', '2026-13-01', 'вчера']) {
+        assert.equal(add({ date }).field, 'date', date);
+    }
+    for (const amount of [0, -5, 'abc', '', 1e12]) assert.equal(add({ amount }).field, 'amount', String(amount));
+});
+
+test('group PIN guessing locks only the group page, a new PIN replaces the old one', () => {
+    const b = withGroupPins();
+    for (let i = 0; i < 4; i++) assert.equal(b.post({ action: 'groupLogin', groupPin: '00000' + i }).error, 'invalid_pin');
+    assert.equal(b.post({ action: 'groupLogin', groupPin: '000009' }).error, 'locked');
+    assert.equal(b.post({ action: 'groupLogin', groupPin: '111111' }).error, 'locked', 'even a right group PIN waits');
+    assert.equal(b.post({ action: 'login', pin: PIN }).ok, true, 'the admin page is not locked');
+    // New PINs from the admin page lift the lock (like a changed admin PIN does), and the old PIN stops working.
+    b.post({ action: 'setGroupPins', pin: PIN, pins: { slot_1: '121212' } });
+    assert.equal(b.post({ action: 'groupLogin', groupPin: '121212' }).group.code, 'ВШ1');
+    assert.equal(b.post({ action: 'groupLogin', groupPin: '111111' }).error, 'invalid_pin');
+    b.advance(601 * 1000);
+    assert.equal(b.post({ action: 'groupLogin', groupPin: '222222' }).ok, true, 'the other groups keep theirs');
+});
+
+test('the group lock wears off after the lock time', () => {
+    const b = withGroupPins();
+    for (let i = 0; i < 5; i++) b.post({ action: 'groupLogin', groupPin: 'x' + i });
+    assert.equal(b.post({ action: 'groupLogin', groupPin: '333333' }).error, 'locked');
+    b.advance(601 * 1000);
+    assert.equal(b.post({ action: 'groupLogin', groupPin: '333333' }).ok, true);
+});
+
 test('a fall command can name any of the six department slots', () => {
     const b = loadBackend();
     for (const hero of ['slot_1', 'slot_6', 'random']) assert.equal(b.post({ action: 'command', pin: PIN, type: 'fall', args: { hero } }).ok, true, hero);

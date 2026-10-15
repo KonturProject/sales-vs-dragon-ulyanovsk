@@ -18,7 +18,7 @@ All commands run from `game/` (the Vite project; the repo root only wraps it).
 npm run dev            # dev server on :8080, hot reload
 npm run build          # production build to game/dist (multi-entry: index.html + admin.html)
 npx tsc --noEmit -p tsconfig.json   # type-check
-npm run test:backend   # runs the real apps-script/Code.gs against fake Google services (37 tests)
+npm run test:backend   # runs the real apps-script/Code.gs against fake Google services (45 tests)
 npm run mock-backend   # same Code.gs on http://localhost:8787/exec, admin PIN 1234, data in memory
 npm run deploy         # build + publish dist/ to the gh-pages branch
 python tools/build-scene.py                     # rebuild the background from assets-source/scene
@@ -52,6 +52,8 @@ Dev pages accept `?backend=http://localhost:8787/exec` to talk to the mock backe
 **Performance**: the game runs on weak office laptops as an always-on display (`core/PowerSaver.ts`: active / ambient 20 fps / idle 10 fps). Don't add endless tweens or per-poll tweens for unchanged values; any new always-running animation costs battery. The breathing loop is a timer-driven frame swap of a single figure; while it runs the frame rate is the ambient 20 fps (the `LIVE_STAND` event), never more. URL overrides: `?quality=low|high`, `?scale=1.25`, `?fps=30`, `?idlefps=5`.
 
 **Idle mood** (`systems/IdleMood.ts`): after an hour of game time without a sale a hero falls over or dozes, the dragon growls from time to time; any real sale wakes everyone. `?idle=<minutes>` shrinks the hour for demos.
+
+**Group leaders' page (new here)**: a third entry point `rg.html` (`src-rg/main.ts`, styles from `src-admin/styles.css`, calls via `callAsGroup` in `src-admin/api.ts`) with one function: enter a payment of the leader's own group. The backend knows the group from the PIN (`groupPin`, actions `groupLogin` / `groupAddSale` in `GROUP_ACTIONS_`); the request never names the group. Dates: now or any moment of the current week up to now. Each of the six leaders has a PIN made **in the admin page** (tab «PIN-код», `crypto.getRandomValues`, 6 digits, shown once with a copy button) → `setGroupPins` → salted hashes in Script Properties `GROUP_PINS`. The user asked for "a PIN per leader"; they are deliberately never invented in chat, written to the repo or typed by Claude into Google settings. Group PINs have their own failure count/lock (`lockRemainingSec_('group_pin')`), so leaders mistyping never lock the admin; a group PIN opens no admin action and the admin PIN opens no group action; new PINs cancel the old ones and lift the group lock.
 
 **Admin + backend**: see `apps-script/README.md`. Animations are *commands* (stored in Script Properties, never in the sheet); `addSale` writes only the Date/Amount/ROP cells of the first free row; `importSales` replaces a period (above); the hero choice and the leaders' names live in Script Properties; wrong PINs lock the API for 10 minutes after 5 tries; polling copes with Apps Script's slow tail (30 s timeout, hedged second request after 6 s, "offline" only after 2 failed polls).
 

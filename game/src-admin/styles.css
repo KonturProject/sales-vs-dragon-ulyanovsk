@@ -554,6 +554,60 @@ button.anim-btn:hover {
     color: #ffb36b;
 }
 
+/* ------------------------------------------------- group leaders' PINs */
+
+.hint a {
+    color: var(--cyan);
+}
+
+.group-pins {
+    display: grid;
+    gap: 6px;
+    margin: 12px 0 14px;
+}
+
+.group-pin-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    font-weight: 600;
+}
+
+.group-pin-row button {
+    padding: 8px 12px;
+}
+
+.pin-out {
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(56, 224, 160, 0.4);
+    background: rgba(56, 224, 160, 0.06);
+}
+
+.pin-out[hidden] {
+    display: none;
+}
+
+.pin-out pre {
+    margin: 0 0 12px;
+    font-family: 'Manrope', Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: all;
+}
+
+/* The group leaders' page: one short form, a narrower card. */
+.rg-card {
+    width: min(460px, 100%);
+}
+
 /* ---------------------------------------------------- narrow screens */
 
 @media (max-width: 520px) {

@@ -26,6 +26,7 @@
     },
     "include": [
         "src",
-        "src-admin"
+        "src-admin",
+        "src-rg"
     ]
 }
