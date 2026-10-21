@@ -16,3 +16,6 @@ skills-lock.json
 npm-ci.log
 __pycache__/
 *.pyc
+
+# brainstorming mockups (visual companion)
+.superpowers/

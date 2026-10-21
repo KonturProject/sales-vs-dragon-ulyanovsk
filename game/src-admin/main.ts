@@ -2,7 +2,9 @@ import ropMapping from '../src/game/config/ropMapping.json';
 import characterList from '../src/game/config/characters.json';
 import defaultRoster from '../src/game/config/heroRoster.json';
 import { GROUP_SLOTS, plateText, sanitiseLeaders, shortPersonName } from '../src/game/systems/Groups';
+import { paymentsText, pluralWord } from '../src/game/systems/Units';
 import { BackendError, callBackend, fetchPublicStatus, newRequestId } from './api';
+import { DayCounter, dayCaption } from './dayCounter';
 import { ParsedPayments, PaymentsFileError, parsePaymentsFile } from './paymentsFile';
 
 interface Character { id: string; name: string }
@@ -29,7 +31,8 @@ const LEAD = 'lead';
 /** What the backend accepts as a leader's name (apps-script/Code.gs, setRoster). */
 const LEADER_NAME = /^[A-Za-zА-Яа-яЁё .'-]{0,40}$/;
 
-interface Sale { row: number; date: string; amount: number; rop: string; invoice?: string }
+/** A "Sales" row; `count` — how many payments it stands for (the game counts payments, not money). */
+interface Sale { row: number; date: string; amount: number; rop: string; invoice?: string; count: number }
 interface Status { plan: number; totalThisWeek: number; weekStart: string; weekEnd: string; byRop: { ropName: string; amount: number }[] }
 interface ListSalesResponse { totalRows: number; shown: number; sales: Sale[]; status: Status }
 
@@ -43,7 +46,9 @@ const statusEl = $<HTMLParagraphElement>('status');
 let pin = '';
 let tableStale = true;
 
-const money = (n: number) => `${Math.round(n).toLocaleString('ru-RU')} ₽`;
+/** The game counts payments: «14 оплат». */
+const payments = paymentsText;
+const ruDate = (day: string) => day.split('-').reverse().join('.');
 
 function setStatus(text: string, kind: 'ok' | 'error' | '' = '') {
     statusEl.textContent = text;
@@ -60,7 +65,7 @@ function showLogin(message = '') {
 }
 
 const FIELD_NAMES: Record<string, string> = {
-    plan: 'план', rop: 'отдел', amount: 'сумма', date: 'дата', newPin: 'новый PIN', newPin_same: 'новый PIN совпадает со старым',
+    plan: 'план (целое число оплат)', rop: 'отдел', amount: 'сумма', date: 'дата (не позже сегодня)', count: 'число оплат (0–999)', newPin: 'новый PIN', newPin_same: 'новый PIN совпадает со старым',
     roster: 'список героев', leaders: 'имена РГ',
     pins: 'PIN-коды групп', pins_duplicate: 'PIN совпал с другим PIN — нажмите ещё раз',
     newPin_group: 'новый PIN совпадает с PIN-кодом руководителя группы',
@@ -134,6 +139,7 @@ function openTab(name: string) {
     setStatus('');
     if (name === 'plan') loadPlanTab();
     if (name === 'table' && tableStale) loadTable();
+    if (name === 'add') loadDayCount();
     if (name === 'heroes') loadHeroesTab();
     if (name === 'pin') loadGroupPins();
 }
@@ -151,7 +157,7 @@ async function loadPlanTab() {
     const status = await fetchPublicStatus();
     if (!status) return;
     planInput.value = String(status.plan);
-    currentStatusEl.textContent = `Сейчас: ${money(status.totalThisWeek)} / ${money(status.plan)}`;
+    currentStatusEl.textContent = `Сейчас: ${status.totalThisWeek} / ${payments(status.plan)}`;
     currentStatusEl.hidden = false;
 }
 
@@ -160,7 +166,7 @@ planForm.addEventListener('submit', async (e) => {
     setStatus('Сохраняю…');
     try {
         const res = await callBackend<{ plan: number }>('setPlan', pin, { plan: Number(planInput.value) });
-        setStatus(`План обновлён: ${money(res.plan)}`, 'ok');
+        setStatus(`План обновлён: ${payments(res.plan)} в неделю.`, 'ok');
         tableStale = true;
         loadPlanTab();
     } catch (err) {
@@ -194,14 +200,14 @@ async function loadTable() {
 
         tableSummary.replaceChildren(
             chip('Неделя', `${s.weekStart} — ${s.weekEnd}`),
-            chip('План', money(s.plan)),
-            chip('Набрано', `${money(s.totalThisWeek)} (${percent}%)`),
-            ...s.byRop.map(r => chip(r.ropName, money(r.amount))),
+            chip('План', payments(s.plan)),
+            chip('Набрано', `${payments(s.totalThisWeek)} (${percent}%)`),
+            ...s.byRop.map(r => chip(r.ropName, payments(r.amount))),
         );
 
         tableBody.replaceChildren(...res.sales.map(sale => {
             const tr = document.createElement('tr');
-            const cells = [String(sale.row), sale.date, sale.rop, Math.round(sale.amount).toLocaleString('ru-RU'), sale.invoice ?? ''];
+            const cells = [String(sale.row), sale.date, sale.rop, String(sale.count), sale.invoice ?? ''];
             cells.forEach((text, i) => {
                 const td = document.createElement('td');
                 td.textContent = text; // textContent, never innerHTML: these are sheet cells
@@ -221,49 +227,58 @@ async function loadTable() {
 
 $('table-refresh').addEventListener('click', loadTable);
 
-/* ------------------------------------------------------------- add sale */
+/* ------------------------------------------------------- payments of a day */
 
-const addForm = $<HTMLFormElement>('add-form');
 const addRop = $<HTMLSelectElement>('add-rop');
-const addAmount = $<HTMLInputElement>('add-amount');
 const addDate = $<HTMLInputElement>('add-date');
 
+/** Today in this computer's time zone ('yyyy-MM-dd'); the backend checks against the sheet's own. */
+function localToday() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
-addForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const amount = Number(addAmount.value);
-    if (!(amount > 0)) {
-        setStatus('Введите сумму больше нуля.', 'error');
-        return;
-    }
-    const when = addDate.value ? addDate.value.replace('T', ' ') : 'сейчас';
-    const group = DEPARTMENTS.find(d => d.rop === addRop.value)?.plate ?? addRop.value;
-    if (!confirm(`Внести в таблицу оплату ${money(amount)} для ${group} (${when})?\n\nЭто настоящая запись: итоги недели изменятся.`)) return;
-
-    setStatus('Записываю…');
-    const submit = addForm.querySelector('button')!;
-    submit.disabled = true;
+const addCounter = new DayCounter(async (count) => {
+    const rop = addRop.value;
+    const day = addDate.value;
+    setStatus('Сохраняю…');
     try {
-        const res = await callBackend<{ added: { date: string; amount: number; rop: string } }>('addSale', pin, {
-            rop: addRop.value,
-            amount,
-            date: addDate.value || undefined,
-            requestId: newRequestId(),
+        const res = await callBackend<{ saved: { rop: string; date: string; count: number; previous: number } }>('setDayCount', pin, {
+            rop, date: day, count, requestId: newRequestId(),
         });
-        setStatus(`Записано: ${res.added.rop} — ${money(res.added.amount)} (${res.added.date})`, 'ok');
-        addAmount.value = '';
-        addDate.value = '';
+        addCounter.setBase(res.saved.count);
         tableStale = true;
+        const group = DEPARTMENTS.find(d => d.rop === rop)?.plate ?? rop;
+        setStatus(`Сохранено: ${group}, ${ruDate(day)} — ${payments(res.saved.count)} (было ${res.saved.previous}).`, 'ok');
     } catch (err) {
         reportError(err);
-    } finally {
-        submit.disabled = false;
     }
 });
+$('add-counter').append(addCounter.el);
+
+/** Reads the chosen group's number for the chosen day — the counter starts from what the sheet holds. */
+let countRequest = 0;
+async function loadDayCount() {
+    if (!pin || !addRop.value || !addDate.value) return;
+    const mine = ++countRequest;
+    addCounter.setCaption(dayCaption(addDate.value));
+    addCounter.setBase(null);
+    try {
+        const res = await callBackend<{ count: number }>('dayCount', pin, { rop: addRop.value, date: addDate.value });
+        if (mine === countRequest) addCounter.setBase(res.count);
+    } catch (err) {
+        if (mine === countRequest) reportError(err);
+    }
+}
+
+addDate.max = localToday();
+addDate.value = localToday();
+addRop.addEventListener('change', loadDayCount);
+addDate.addEventListener('change', loadDayCount);
 
 /* ------------------------------------------------------------ animations */
 
-const animAmount = $<HTMLInputElement>('anim-amount');
+const animCount = $<HTMLInputElement>('anim-count');
 const animHero = $<HTMLSelectElement>('anim-hero');
 const animHits = $<HTMLDivElement>('anim-hits');
 
@@ -287,7 +302,7 @@ function buildAnimationControls() {
 
 function commandArgs(button: HTMLButtonElement): Record<string, unknown> {
     switch (button.dataset.cmd) {
-        case 'hit': return { rop: button.dataset.rop, amount: Number(animAmount.value) || 50000 };
+        case 'hit': return { rop: button.dataset.rop, count: Math.max(1, Math.min(999, Math.round(Number(animCount.value)) || 1)) };
         case 'fall': return { hero: animHero.value, mode: button.dataset.mode };
         default: return {};
     }
@@ -586,20 +601,14 @@ const importFoot = document.querySelector<HTMLTableSectionElement>('#import-tabl
 const importNotes = $<HTMLUListElement>('import-notes');
 const importRun = $<HTMLButtonElement>('import-run');
 
-interface PeriodNow { rows: number; amount: number; manualRows: number; manualAmount: number; byRop: Record<string, number> }
+/** What the sheet holds for the file's period now, in payments (`manualPayments` — numbers saved by the leaders / the admin). */
+interface PeriodNow { rows: number; payments: number; manualPayments: number; byRop: Record<string, number> }
 
 /** The file read and checked against the sheet, waiting for «Загрузить». */
 let pendingImport: { file: ParsedPayments; now: PeriodNow } | null = null;
 
-const ruDate = (day: string) => day.split('-').reverse().join('.');
-/** «1 строка», «3 строки», «5 строк». */
-function plural(n: number, one: string, few: string, many: string) {
-    const word = n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many;
-    return `${n} ${word}`;
-}
-const lines = (n: number) => plural(n, 'строка', 'строки', 'строк');
-const records = (n: number) => plural(n, 'запись', 'записи', 'записей');
-const invoices = (n: number) => plural(n, 'счёт', 'счёта', 'счетов');
+const lines = (n: number) => `${n} ${pluralWord(n, 'строка', 'строки', 'строк')}`;
+const invoices = (n: number) => `${n} ${pluralWord(n, 'счёт', 'счёта', 'счетов')}`;
 
 function resetImport() {
     pendingImport = null;
@@ -617,44 +626,44 @@ function cell(text: string, className = '') {
 
 function renderImportPreview(file: ParsedPayments, now: PeriodNow) {
     const period = file.from === file.to ? ruDate(file.from) : `${ruDate(file.from)} — ${ruDate(file.to)}`;
-    const after = file.rows.reduce((sum, r) => sum + r.amount, 0);
+    const after = file.rows.length; // one invoice = one payment
     importSummary.replaceChildren(
         chip('Период файла', period),
-        chip('Счетов наших групп', String(file.rows.length)),
-        chip('Станет за период', money(after)),
+        chip('Сейчас за период', payments(now.payments)),
+        chip('Станет за период', payments(after)),
     );
 
     importBody.replaceChildren(...DEPARTMENTS.map(dep => {
-        const mine = file.rows.filter(r => r.rop === dep.rop);
-        const sum = mine.reduce((s, r) => s + r.amount, 0);
+        const mine = file.rows.filter(r => r.rop === dep.rop).length;
         const before = now.byRop[dep.rop] ?? 0;
         const tr = document.createElement('tr');
-        // Less than the sheet holds now: payments would disappear (cancelled — or the export missed this group).
-        if (sum < before - 0.5) tr.className = 'drop';
-        tr.append(cell(dep.plate), cell(String(mine.length), 'num'), cell(money(before), 'num'), cell(money(sum), 'num'));
+        // Fewer than the sheet holds now: payments would disappear (cancelled, too high a count — or the export missed this group).
+        if (mine < before) tr.className = 'drop';
+        tr.append(cell(dep.plate), cell(String(before), 'num'), cell(String(mine), 'num'));
         return tr;
     }));
     const total = document.createElement('tr');
-    total.append(cell('Итого'), cell(String(file.rows.length), 'num'), cell(money(now.amount), 'num'), cell(money(after), 'num'));
+    total.append(cell('Итого'), cell(String(now.payments), 'num'), cell(String(after), 'num'));
     importFoot.replaceChildren(total);
 
     const notes: { text: string; warn?: boolean }[] = [];
-    notes.push({ text: `Все записи таблицы за ${period} (${records(now.rows)} на ${money(now.amount)}) заменятся счетами из файла.` });
-    if (now.manualRows > 0) {
-        notes.push({ text: `Из них внесено вручную: ${records(now.manualRows)} на ${money(now.manualAmount)} — тоже заменятся. Если эти оплаты есть в выгрузке, двойного учёта не будет.` });
+    notes.push({ text: `Все оплаты таблицы за ${period} (${payments(now.payments)}) заменятся счетами из файла: один счёт — одна оплата.` });
+    if (now.manualPayments > 0) {
+        notes.push({ text: `Из них нащёлкано РГ или внесено в админке: ${payments(now.manualPayments)} — они тоже заменятся счетами файла.` });
     }
+    if (file.cheap > 0) notes.push({ text: `Не считаются: ${invoices(file.cheap)} дешевле 100 ₽.` });
     if (file.fileTotal !== null) {
-        if (Math.abs(file.fileTotal - file.linesTotal) < 0.5) notes.push({ text: `Сумма строк файла совпадает с его итогом «Сумма заказа»: ${money(file.fileTotal)}.` });
-        else notes.push({ text: `Сумма строк файла (${money(file.linesTotal)}) не совпадает с его итогом «Сумма заказа» (${money(file.fileTotal)}) — проверьте файл.`, warn: true });
+        if (Math.abs(file.fileTotal - file.linesTotal) < 0.5) notes.push({ text: 'Файл прочитан целиком: сумма его строк сходится с итогом «Сумма заказа».' });
+        else notes.push({ text: 'Сумма строк файла не сходится с его итогом «Сумма заказа» — возможно, файл прочитан не целиком. Проверьте файл.', warn: true });
     }
     for (const dep of DEPARTMENTS) {
         const before = now.byRop[dep.rop] ?? 0;
         if (before > 0 && !file.rows.some(r => r.rop === dep.rop)) {
-            notes.push({ text: `В файле нет оплат группы ${dep.plate}: её ${money(before)} за период пропадут. Если выгрузка не по всем группам, не загружайте её.`, warn: true });
+            notes.push({ text: `В файле нет оплат группы ${dep.plate}: её ${payments(before)} за период пропадут. Если выгрузка не по всем группам, не загружайте её.`, warn: true });
         }
     }
     if (file.foreign.length > 0) {
-        const list = file.foreign.slice(0, 4).map(f => `«${f.group}» — ${lines(f.lines)} на ${money(f.amount)}`).join('; ');
+        const list = file.foreign.slice(0, 4).map(f => `«${f.group}» — ${lines(f.lines)}`).join('; ');
         const more = file.foreign.length > 4 ? ` и ещё ${file.foreign.length - 4}` : '';
         notes.push({ text: `Не наши группы — не загружаются: ${list}${more}.`, warn: file.rows.length === 0 });
     }
@@ -704,18 +713,17 @@ importRun.addEventListener('click', async () => {
     if (!pendingImport) return;
     const { file, now } = pendingImport;
     const period = file.from === file.to ? ruDate(file.from) : `${ruDate(file.from)} — ${ruDate(file.to)}`;
-    const after = file.rows.reduce((sum, r) => sum + r.amount, 0);
-    if (!confirm(`Заменить оплаты за ${period}?\n\nСейчас в таблице: ${records(now.rows)} на ${money(now.amount)}.\nСтанет: ${invoices(file.rows.length)} на ${money(after)}.\n\nЭто настоящая запись: итоги недели изменятся, на экранах ударят герои.`)) return;
+    if (!confirm(`Заменить оплаты за ${period}?\n\nСейчас в таблице: ${payments(now.payments)}.\nСтанет: ${payments(file.rows.length)} (по счетам из файла).\n\nЭто настоящая запись: итоги недели изменятся, на экранах ударят герои.`)) return;
 
     setStatus('Загружаю в таблицу…');
     importRun.disabled = true;
     try {
-        const res = await callBackend<{ removed: { rows: number }; added: { rows: number; amount: number } }>('importSales', pin, {
+        const res = await callBackend<{ removed: { payments: number }; added: { payments: number } }>('importSales', pin, {
             from: file.from, to: file.to, rows: file.rows, requestId: newRequestId(),
         });
         resetImport();
         tableStale = true;
-        setStatus(`Загружено: ${invoices(res.added.rows)} на ${money(res.added.amount)}, заменено: ${records(res.removed.rows)}. Если суммы этой недели выросли, герои ударят по очереди в течение ~15 секунд.`, 'ok');
+        setStatus(`Загружено: ${payments(res.added.payments)} (было ${res.removed.payments}). Если число оплат этой недели выросло, герои ударят по очереди в течение ~15 секунд.`, 'ok');
     } catch (err) {
         reportError(err);
     } finally {

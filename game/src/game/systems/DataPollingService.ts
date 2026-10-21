@@ -100,8 +100,8 @@ function diffAndEmit(previous: Record<string, number> | null, status: StatusResp
     let hitCount = 0;
 
     if (previous !== null) {
-        // One blow per hero and poll, even when its group's money came under two spellings of the name (or the
-        // poll caught several payments, e.g. right after an import): the deltas of a slot are added up.
+        // One blow per hero and poll, even when its group's payments came under two spellings of the name (or the
+        // poll caught several of them, e.g. right after an import): the deltas of a slot are added up.
         const bySlot = new Map<string, MoneyInPayload>();
         for (const row of status.byRop) {
             const delta = row.amount - (previous[row.ropName] ?? 0);

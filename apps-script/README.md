@@ -22,10 +22,11 @@ Standalone-проект (не привязан к таблице через Exte
 | `login` | `pin` | проверяет PIN |
 | `setPlan` | `pin, plan` | недельный план |
 | `listSales` | `pin, limit?` (до 200) | последние непустые строки «Sales» (новые сверху) + итоги недели + план |
-| `addSale` | `pin, rop, amount, date?, requestId?` | пишет оплату в первую свободную строку после последней продажи (только ячейки Date/Amount/ROP). Реальная оплата — герои на экранах ударят |
-| `importSales` | `pin, from, to, rows, dryRun?, requestId?` | импорт выгрузки (файл разбирает админка): `rows` — `[{date: 'yyyy-MM-dd', amount, rop: 'ВШ1', invoice}]`, все даты внутри `from..to`, `rop` — один из шести кодов, до 5000 строк. **Все** оплаты таблицы с датами `from..to` (и импортированные раньше, и внесённые вручную) заменяются присланными, остальные дни не трогаются; лист переписывается одним `setValues` (без удаления строк), меняются только ячейки Date/Amount/ROP/Invoice. С `dryRun: true` ничего не пишет и возвращает, что сейчас в таблице за период (`current: {rows, amount, manualRows, manualAmount, byRop}`). Ответ: `removed`, `added`, `status` |
+| `dayCount` | `pin, rop, date` | сколько оплат у группы (`ВШ1`…) в этот день (`count`) |
+| `setDayCount` | `pin, rop, date, count, requestId?` | число оплат группы за день (0–999, день — не позже сегодня): строки этой группы за этот день заменяются одной строкой с `Count` (при 0 — ни одной). Последнее слово — за тем, кто сохранил позже: импорт периода заменит это число счетами, а число, сохранённое после импорта, заменит счета дня. Ответ: `saved: {rop, date, count, previous}`, `status` |
+| `importSales` | `pin, from, to, rows, dryRun?, requestId?` | импорт выгрузки (файл разбирает админка): `rows` — `[{date: 'yyyy-MM-dd', amount, rop: 'ВШ1', invoice}]`, один счёт = одна оплата (счета дешевле 100 ₽ админка не присылает), все даты внутри `from..to`, `rop` — один из шести кодов, до 5000 строк. **Все** оплаты таблицы с датами `from..to` (и импортированные раньше, и числа, сохранённые РГ/админом) заменяются присланными (каждая строка — `Count` 1), остальные дни не трогаются; лист переписывается одним `setValues` (без удаления строк), меняются только ячейки Date/Amount/ROP/Invoice/Count. С `dryRun: true` ничего не пишет и возвращает, что сейчас в таблице за период (`current: {rows, payments, manualPayments, byRop}` — в оплатах). Ответ: `removed: {rows, payments}`, `added: {payments}`, `status` |
 | `changePin` | `pin, newPin` | меняет PIN (4–12 цифр), хранится хешем `salt$sha256` |
-| `command` | `pin, type, args?, requestId?` | анимация на экранах: `hit {rop, amount}`, `fall {hero: random\|slot_1…slot_6, mode}`, `wake`, `growl`, `confetti`, `celebrate`. В таблицу не пишется |
+| `command` | `pin, type, args?, requestId?` | анимация на экранах: `hit {rop, count}` (число оплат в подписи, по умолчанию 1), `fall {hero: random\|slot_1…slot_6, mode}`, `wake`, `growl`, `confetti`, `celebrate`. В таблицу не пишется |
 | `setRoster` | `pin, roster?, leaders?` | кто стоит в слотах (`slot_1…slot_6`, `lead`): `{slot_1: 'viking', lead: 'businesswoman'}` и/или РГ на табличках групп: `{slot_1: 'Измайлова И.'}` (буквы, пробел, точка, дефис, до 40 знаков; пустая строка — на табличке только код группы). Меняются только присланные слоты; хранится в Script Properties (`ROSTER`, `LEADERS`), в таблицу не пишется |
 | `setGroupPins` | `pin, pins` | PIN-коды руководителей групп: `{slot_1: '123456', …}` (6–12 цифр, у групп разные и не равны админскому). Админка придумывает их случайно и показывает один раз; хранится только солёный хеш (`GROUP_PINS`). Новый PIN сразу отменяет прежний и снимает блокировку страницы РГ |
 | `groupPinStatus` | `pin` | у каких групп PIN задан (`{slot_1: true, …}`) — сами PIN и хеши не отдаются |
@@ -34,8 +35,8 @@ Standalone-проект (не привязан к таблице через Exte
 
 | `action` | Параметры | Что делает |
 |---|---|---|
-| `groupLogin` | `groupPin` | какая группа (`group: {slot, code, leader}`) и её сумма за неделю (`week: {start, today, total}`) |
-| `groupAddSale` | `groupPin, amount, date?, requestId?` | оплата своей группы в первую свободную строку (как `addSale`); дата — пусто (сейчас) или момент текущей недели не позже текущего. Ответ — как у `groupLogin` + `added` |
+| `groupLogin` | `groupPin` | какая группа (`group: {slot, code, leader}`) и её оплаты за неделю (`week: {start, today, total, days: {'yyyy-MM-dd': число}}`) |
+| `groupSetCount` | `groupPin, date, count, requestId?` | число оплат своей группы за день текущей недели (с понедельника до сегодня), как `setDayCount`. Ответ — как у `groupLogin` + `saved` |
 
 У неверных PIN групп свой счётчик: после 5 ошибок за 10 минут страница РГ блокируется на 10 минут, админку это не задевает.
 
@@ -45,7 +46,7 @@ Standalone-проект (не привязан к таблице через Exte
 
 ```bash
 cd game
-npm run test:backend      # 45 тестов: PIN, блокировка, addSale, importSales, listSales, changePin, команды, выбор героев и РГ, PIN-коды и страница РГ
+npm run test:backend      # 44 теста: PIN, блокировка, счётчик за день, importSales, listSales, changePin, команды, выбор героев и РГ, PIN-коды и страница РГ
 npm run mock-backend      # тот же Code.gs на http://localhost:8787/exec (PIN 1234, данные в памяти)
 ```
 

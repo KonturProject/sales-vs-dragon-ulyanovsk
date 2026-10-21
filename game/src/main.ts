@@ -12,19 +12,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (import.meta.env.DEV) {
         // Manual test hook: from the devtools console, e.g.
-        //   __debug.hit('slot_1', 50000)
-        // fires a money:in event without waiting on a real poll cycle.
+        //   __debug.hit('slot_1', 2)
+        // fires a money:in event (2 payments) without waiting on a real poll cycle.
         (window as any).__debug = {
             EventBus,
             GameEvents,
             GameState,
             game,
-            hit: (heroSlug: string, delta = 10000) => {
+            hit: (heroSlug: string, delta = 1) => {
                 EventBus.emit(GameEvents.MONEY_IN, { heroSlug, ropName: 'debug', delta });
             },
             /** Simulate the weekly total reaching `ratio` (0..1) of the plan: fires the same diff/events a real poll would. */
             setRatio: (ratio: number) => {
-                const plan = GameState.plan || 5000000;
+                const plan = GameState.plan || 60;
                 const total = Math.round(plan * ratio);
                 const rows = Object.keys(GameState.byRop).length
                     ? Object.entries(GameState.byRop).map(([ropName, amount]) => ({ ropName, amount }))
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
             power: () => powerSaver?.stats(),
             /** `__debug.mood()` -> the idle-mood director: `.advance(ms)`, `.dropOne()`, `.wakeAll()`, `.state()`; `.dragon` growl via `__debug.growl()`. */
             mood: () => (game.scene.getScene('PenScene') as PenScene).mood,
-            /** `__debug.command('hit', { rop: 'ВШ1', amount: 90000 })` — what the admin page's animation buttons cause. */
+            /** `__debug.command('hit', { rop: 'ВШ1', count: 2 })` — what the admin page's animation buttons cause. */
             command: (type: string, args: Record<string, unknown> = {}) => EventBus.emit(GameEvents.ADMIN_COMMAND, { type, args }),
             /** `__debug.roster({ slot_1: 'ninja', lead: 'queen' })` — what a poll does when the admin picked other heroes (no argument: show the current choice). */
             roster: (choice?: Record<string, string>) => {

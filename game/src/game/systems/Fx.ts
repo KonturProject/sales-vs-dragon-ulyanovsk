@@ -1,5 +1,6 @@
 import { GameObjects, Scene } from 'phaser';
 import { GAME } from '../core/Constants';
+import { paymentsText } from './Units';
 
 /** Tweened-circle particle burst — no particle plugin needed. */
 export function emitBurst(scene: Scene, x: number, y: number, color: number, count = 10) {
@@ -92,7 +93,7 @@ export function emitShockwaveRing(scene: Scene, x: number, y: number, color: num
 
 const ONOMATOPOEIA = ['БАМ!', 'ХРЯСЬ!', 'БАХ!', 'ХЛОП!'];
 
-/** Comic-book impact text, Reserved for bigger sales — see FX.COMIC_TEXT_MIN_DELTA. */
+/** Comic-book impact text on a blow — see FX.COMIC_TEXT_MIN_DELTA. */
 export function emitComicText(scene: Scene, x: number, y: number): GameObjects.Text {
     const text = ONOMATOPOEIA[Math.floor(Math.random() * ONOMATOPOEIA.length)];
     const t = scene.add.text(x, y, text, {
@@ -115,9 +116,9 @@ export function emitComicText(scene: Scene, x: number, y: number): GameObjects.T
     return t;
 }
 
-/** "+50 000 ₽" text that flies from a hero toward the HUD bar and fades — visually ties the hit to the number going up. */
-export function emitFloatingAmount(scene: Scene, x: number, y: number, amount: number, targetX: number, targetY: number): GameObjects.Text {
-    const t = scene.add.text(x, y, `+${Math.round(amount).toLocaleString('ru-RU')} ₽`, {
+/** «+1 оплата» text that flies from a hero toward the HUD bar and fades — visually ties the hit to the number going up. */
+export function emitFloatingPayments(scene: Scene, x: number, y: number, count: number, targetX: number, targetY: number): GameObjects.Text {
+    const t = scene.add.text(x, y, `+${paymentsText(count)}`, {
         fontFamily: 'Arial Black, Arial, sans-serif',
         fontSize: '18px',
         resolution: GAME.RENDER_SCALE,

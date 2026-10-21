@@ -311,7 +311,8 @@ export class HUDScene extends Scene {
 
     private drawLabel() {
         this.label.setText(
-            `${Math.round(this.displayedTotal).toLocaleString('ru-RU')} / ${Math.round(this.displayedPlan).toLocaleString('ru-RU')} ₽`
+            // Payments, not money: «14 / 60 оплат».
+            `${Math.round(this.displayedTotal).toLocaleString('ru-RU')} / ${Math.round(this.displayedPlan).toLocaleString('ru-RU')} оплат`
         );
     }
 

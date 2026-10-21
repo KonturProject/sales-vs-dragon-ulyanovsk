@@ -13,22 +13,18 @@
         <div class="eyebrow">Победи дракона · Ульяновск</div>
         <h1 id="title">Оплаты группы</h1>
 
-        <form id="pin-form">
+        <form id="pin-form" onsubmit="event.preventDefault()">
             <label for="pin">PIN-код руководителя группы</label>
-            <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••••" required />
+            <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••••" required />
             <button type="submit">Войти<span class="btn-arrow">→</span></button>
         </form>
 
         <div id="panel" hidden>
             <p id="rg-week" class="current-status"></p>
-            <form id="sale-form">
-                <label for="sale-amount">Сумма оплаты, ₽</label>
-                <input id="sale-amount" type="number" min="1" step="any" inputmode="decimal" placeholder="150000" required />
-                <label for="sale-date">Дата оплаты <span class="optional">(если не сегодня — только эта неделя)</span></label>
-                <input id="sale-date" type="date" />
-                <button type="submit">Внести оплату<span class="btn-arrow">→</span></button>
-            </form>
-            <p class="hint">Оплата сразу попадает в таблицу «победи дракона», а на экранах герой вашей группы бьёт дракона (в течение ~15 секунд). Ошиблись — напишите администратору игры: исправить или удалить запись можно только в таблице.</p>
+            <div class="field-label">Дата</div>
+            <div id="rg-days" class="day-chips" role="group" aria-label="Дата"></div>
+            <div id="rg-counter"></div>
+            <p class="hint">Число — сколько оплат у вашей группы <b>на этот день</b>. Нажимайте «+» и «−», затем «Сохранить»: число попадёт в таблицу «победи дракона», а если оно выросло — герой вашей группы ударит дракона на экранах (в течение ~15 секунд). Ошиблись — уменьшите число и сохраните.</p>
             <button type="button" id="logout" class="ghost logout">Выйти</button>
         </div>
 

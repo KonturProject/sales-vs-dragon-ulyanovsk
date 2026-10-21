@@ -15,7 +15,7 @@ import { LeadSprite } from '../objects/LeadSprite';
 import { NamePlate, PLATE_HEIGHT } from '../objects/NamePlate';
 import { IdleMood } from '../systems/IdleMood';
 import { LiveStand } from '../systems/LiveStand';
-import { emitFloatingAmount, startIdleSway } from '../systems/Fx';
+import { emitFloatingPayments, startIdleSway } from '../systems/Fx';
 import { AudioSystem } from '../systems/Audio';
 
 /** Above every hero (their depth is the feet's y, at most ~600) and the lead, below the hit effects (1400). */
@@ -130,7 +130,7 @@ export class PenScene extends Scene {
         if (hero) {
             hero.playHit(payload.delta);
             this.time.delayedCall(HERO.IMPACT_MS, () => this.dragon.reactToHit());
-            emitFloatingAmount(
+            emitFloatingPayments(
                 this, hero.x, hero.y - 150, payload.delta,
                 HUD.BAR_X + HUD.BAR_WIDTH / 2, HUD.BAR_Y + HUD.BAR_HEIGHT / 2
             );
@@ -148,7 +148,7 @@ export class PenScene extends Scene {
         switch (cmd.type) {
             case 'hit': {
                 const rop = String(cmd.args.rop ?? '');
-                const delta = Number(cmd.args.amount) || 50000;
+                const delta = Number(cmd.args.count) || 1;
                 EventBus.emit(GameEvents.MONEY_IN, {
                     heroSlug: RosterConfig.heroSlugForRop(rop) ?? 'overflow', ropName: rop, delta, demo: true,
                 } satisfies MoneyInPayload);

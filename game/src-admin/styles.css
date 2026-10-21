@@ -608,6 +608,109 @@ button.anim-btn:hover {
     width: min(460px, 100%);
 }
 
+/* ------------------------------------------- payments of a day (counter) */
+
+.field-label {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+}
+
+.day-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 18px;
+}
+
+button.day-chip {
+    margin: 0;
+    padding: 9px 12px;
+    font-family: 'Manrope', Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    box-shadow: none;
+}
+
+button.day-chip:hover {
+    transform: none;
+    box-shadow: none;
+    background: rgba(52, 216, 232, 0.16);
+}
+
+button.day-chip.active {
+    background: linear-gradient(135deg, var(--cyan), var(--green));
+    color: #03151a;
+}
+
+.count-form {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.counter {
+    margin: 4px 0 6px;
+}
+
+.counter-caption {
+    text-align: center;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+}
+
+.counter-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    margin-bottom: 18px;
+}
+
+button.counter-btn {
+    width: 64px;
+    height: 64px;
+    margin: 0;
+    padding: 0;
+    border-radius: 50%;
+    font-family: 'Manrope', Arial, sans-serif;
+    font-size: 34px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+button.counter-btn.minus {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    box-shadow: none;
+}
+
+.counter-value {
+    min-width: 80px;
+    text-align: center;
+    font-size: 56px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+button.counter-save {
+    text-transform: none;
+    letter-spacing: 0.5px;
+}
+
 /* ---------------------------------------------------- narrow screens */
 
 @media (max-width: 520px) {

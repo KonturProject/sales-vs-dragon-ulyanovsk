@@ -74,7 +74,7 @@ export const HERO = {
     /** Height of a standing hero's texture, px — every character is built to it (tools/build-characters.py, TARGET_H). */
     TEXTURE_HEIGHT: 290,
     /**
-     * When one poll brings money for several departments (an import of a whole export, say), the heroes strike one
+     * When one poll brings payments for several departments (an import of a whole export, say), the heroes strike one
      * after another, left to right, this far apart: the next one sets off as the previous one's blow has landed and
      * it turns back — never everybody at once.
      */
@@ -152,9 +152,9 @@ export const HUD = {
 } as const;
 
 export const FX = {
-    /** Comic onomatopoeia text only pops up for sales at/above this size — keeps
-     * frequent small sales from making the screen "chatter" with text every hit. */
-    COMIC_TEXT_MIN_DELTA: 50000,
+    /** Comic onomatopoeia text pops up for strikes of at least this many payments. The game counts payments, and a
+     * strike only happens when a group's number grows (a leader saves a day, an import) — so every blow gets it. */
+    COMIC_TEXT_MIN_DELTA: 1,
 } as const;
 
 export const POLL = {

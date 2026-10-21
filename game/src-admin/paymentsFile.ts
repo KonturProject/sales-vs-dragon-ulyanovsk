@@ -5,7 +5,8 @@ import { groupCode, slotForGroup } from '../src/game/systems/Groups';
  * amount, the group and the invoice number are taken; clients, INNs and products never leave this page.
  *
  * The layout drifts between exports (header in row 1 or row 3, a title above it), so the header row is found by
- * the column names. One line = one item of a paid invoice; the items of one invoice are added up into one payment.
+ * the column names. One line = one item of a paid invoice; the items of one invoice are added up into one payment —
+ * the game counts payments, so an invoice is one payment whatever its amount, except one under CHEAP_INVOICE ₽.
  * The last line «Сумма заказа» holds the file's own total — used to check that nothing was lost on the way.
  */
 
@@ -31,7 +32,12 @@ export interface ParsedPayments {
     foreign: { group: string; lines: number; amount: number }[];
     /** Lines that could not be read (no date, no amount). */
     unreadable: number;
+    /** Invoices of our groups under CHEAP_INVOICE ₽ — not payments (a gift for a few rubles), left out of `rows`. */
+    cheap: number;
 }
+
+/** The game counts payments: an invoice whose total is below this many rubles does not count as one (the user's rule). */
+export const CHEAP_INVOICE = 100;
 
 export class PaymentsFileError extends Error {}
 
@@ -152,11 +158,14 @@ export async function parsePaymentsFile(file: File): Promise<ParsedPayments> {
 
     if (lines === 0) throw new PaymentsFileError('В файле не нашлось ни одной оплаты с датой и суммой.');
 
-    const rows = [...payments.values()]
-        .map(p => ({ ...p, amount: round2(p.amount) }))
+    // One invoice = one payment — unless the whole invoice is a few rubles.
+    const all = [...payments.values()].map(p => ({ ...p, amount: round2(p.amount) }));
+    const rows = all
+        .filter(p => p.amount >= CHEAP_INVOICE)
         .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     return {
         rows,
+        cheap: all.length - rows.length,
         from,
         to,
         lines,

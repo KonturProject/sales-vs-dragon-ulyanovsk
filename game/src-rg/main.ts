@@ -1,14 +1,17 @@
 import { plateText, sanitiseLeaders } from '../src/game/systems/Groups';
+import { paymentsText } from '../src/game/systems/Units';
 import { BackendError, callAsGroup, newRequestId } from '../src-admin/api';
+import { DayCounter, dayCaption, dayName, daysBetween, shortDay } from '../src-admin/dayCounter';
 
 /**
- * The group leaders' page: one thing only — enter a payment of your own group. The PIN says which group it is
- * (apps-script/Code.gs, groupLogin / groupAddSale); the leader never picks a group, so cannot enter one for another.
+ * The group leaders' page: one thing only — how many payments the leader's own group has on a day of this week.
+ * The PIN says which group it is (apps-script/Code.gs, groupLogin / groupSetCount); the leader never picks a group,
+ * so cannot touch another one. The game counts payments, not money: there is no amount here.
  */
 
 interface GroupView {
     group: { slot: string; code: string; leader: string | null };
-    week: { start: string; today: string; total: number };
+    week: { start: string; today: string; total: number; days: Record<string, number> };
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -18,16 +21,15 @@ const panel = $<HTMLDivElement>('panel');
 const statusEl = $<HTMLParagraphElement>('status');
 const title = $<HTMLHeadingElement>('title');
 const weekEl = $<HTMLParagraphElement>('rg-week');
-const saleForm = $<HTMLFormElement>('sale-form');
-const amountInput = $<HTMLInputElement>('sale-amount');
-const dateInput = $<HTMLInputElement>('sale-date');
+const daysEl = $<HTMLDivElement>('rg-days');
 
 /** Kept in memory only for this page's lifetime — never stored, never in a URL. */
 let pin = '';
 let view: GroupView | null = null;
+let day = '';
 
-const money = (n: number) => `${Math.round(n).toLocaleString('ru-RU')} ₽`;
-const ruDate = (day: string) => day.split('-').reverse().join('.');
+const counter = new DayCounter(saveCount);
+$('rg-counter').append(counter.el);
 
 function setStatus(text: string, kind: 'ok' | 'error' | '' = '') {
     statusEl.textContent = text;
@@ -43,14 +45,31 @@ function groupName(v: GroupView): string {
 function show(v: GroupView) {
     view = v;
     title.textContent = groupName(v);
-    weekEl.textContent = `Группа за неделю с ${ruDate(v.week.start)}: ${money(v.week.total)}`;
-    dateInput.min = v.week.start;
-    dateInput.max = v.week.today;
+    weekEl.textContent = `Группа за неделю: ${paymentsText(v.week.total)}`;
+    const days = daysBetween(v.week.start, v.week.today);
+    if (!days.includes(day)) day = v.week.today;
+    daysEl.replaceChildren(...days.map(d => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'day-chip' + (d === day ? ' active' : '');
+        chip.textContent = d === v.week.today ? `${shortDay(d)} · сегодня` : shortDay(d);
+        chip.setAttribute('aria-pressed', String(d === day));
+        chip.addEventListener('click', () => {
+            if (!view || d === day) return;
+            day = d;
+            show(view);
+            setStatus('');
+        });
+        return chip;
+    }));
+    counter.setCaption(dayCaption(day));
+    counter.setBase(v.week.days[day] ?? 0);
 }
 
 function showLogin(message = '') {
     pin = '';
     view = null;
+    day = '';
     pinInput.value = '';
     panel.hidden = true;
     pinForm.hidden = false;
@@ -81,11 +100,30 @@ function reportError(err: unknown) {
             break;
         case 'bad_request':
             setStatus(err.detail?.field === 'date'
-                ? 'Дата — только текущая неделя и не позже сегодняшнего дня.'
-                : 'Введите сумму больше нуля.', 'error');
+                ? 'Можно только дни текущей недели до сегодняшнего. Обновите страницу, если неделя сменилась.'
+                : 'Число оплат — от 0 до 999.', 'error');
             break;
         default:
             setStatus(`Ошибка: ${err.code}`, 'error');
+    }
+}
+
+async function saveCount(count: number) {
+    if (!view) return;
+    const savedDay = day;
+    setStatus('Сохраняю…');
+    try {
+        const res = await callAsGroup<GroupView & { saved: { count: number; previous: number } }>('groupSetCount', pin, {
+            date: savedDay,
+            count,
+            requestId: newRequestId(),
+        });
+        show(res);
+        const grew = res.saved.count > res.saved.previous;
+        setStatus(`Сохранено: ${dayName(savedDay)} — ${paymentsText(res.saved.count)}.`
+            + (grew ? ' Герой группы ударит на экранах в течение ~15 секунд.' : ''), 'ok');
+    } catch (err) {
+        reportError(err);
     }
 }
 
@@ -101,42 +139,8 @@ pinForm.addEventListener('submit', async (e) => {
         panel.hidden = false;
         show(res);
         setStatus('');
-        amountInput.focus();
     } catch (err) {
         reportError(err);
-    }
-});
-
-saleForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!view) return;
-    const amount = Number(amountInput.value);
-    if (!(amount > 0)) {
-        setStatus('Введите сумму больше нуля.', 'error');
-        return;
-    }
-    // Today (or empty) = now, so the payment lands with the current time; an earlier day = that day.
-    const day = dateInput.value && dateInput.value !== view.week.today ? dateInput.value : '';
-    const when = day ? ruDate(day) : 'сейчас';
-    if (!confirm(`Внести оплату ${money(amount)} для ${groupName(view)} (${when})?\n\nЭто настоящая запись: итоги недели изменятся, на экранах ударит герой группы.`)) return;
-
-    setStatus('Записываю…');
-    const submit = saleForm.querySelector('button')!;
-    submit.disabled = true;
-    try {
-        const res = await callAsGroup<GroupView & { added: { date: string; amount: number } }>('groupAddSale', pin, {
-            amount,
-            date: day || undefined,
-            requestId: newRequestId(),
-        });
-        show(res);
-        amountInput.value = '';
-        dateInput.value = '';
-        setStatus(`Записано: ${money(res.added.amount)} (${res.added.date}). Герой группы ударит на экранах в течение ~15 секунд.`, 'ok');
-    } catch (err) {
-        reportError(err);
-    } finally {
-        submit.disabled = false;
     }
 });
 

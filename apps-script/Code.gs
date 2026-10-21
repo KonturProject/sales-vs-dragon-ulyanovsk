@@ -9,10 +9,14 @@
  * Script Properties (SPREADSHEET_ID), so no id sits in this file. Then set the ADMIN_PIN property
  * (Project Settings > Script properties) and deploy as a Web App (execute as me, anyone can access).
  *
+ * The game counts PAYMENTS (pieces), not money: the weekly plan, the totals and the strikes are numbers of payments.
+ *
  * Sheet schema (tab names are literal, columns are header-matched, order-independent):
- *   "Sales"    — Date | Amount | ROP | Invoice (one row per incoming payment; Invoice — the invoice number of an
- *                                               imported payment, empty for one typed in by hand)
- *   "Settings" — Key | Value                   (rows: WeeklyPlan, TotalMeters)
+ *   "Sales"    — Date | Amount | ROP | Invoice | Count
+ *                one row per imported invoice (Invoice set, Count 1, Amount kept for reference only), or one row per
+ *                group and day saved by a group leader / the admin (Count = that day's number of payments). A row
+ *                without a Count (an old one) stands for one payment.
+ *   "Settings" — Key | Value                   (rows: WeeklyPlan — in payments, TotalMeters)
  *
  * HTTP API (one Web App URL):
  *   GET            public, aggregates only: week status + recent admin "commands" + the stage setup for the displays.
@@ -20,7 +24,8 @@
  *     { action: 'login',       pin }                                  check the PIN
  *     { action: 'setPlan',     pin, plan }                            weekly plan (also the legacy { pin, plan } form)
  *     { action: 'listSales',   pin, limit? }                          latest rows of "Sales" + week status + settings
- *     { action: 'addSale',     pin, rop, amount, date?, requestId? }  append a payment row to "Sales"
+ *     { action: 'dayCount',    pin, rop, date }                       how many payments a group has on a day
+ *     { action: 'setDayCount', pin, rop, date, count, requestId? }    set that number (the day's rows of the group are replaced)
  *     { action: 'importSales', pin, from, to, rows, dryRun?, requestId? }  replace the payments of a period (export file)
  *     { action: 'changePin',   pin, newPin }                          change the PIN (stored as a salted hash)
  *     { action: 'command',     pin, type, args?, requestId? }         show an animation on the displays
@@ -29,8 +34,8 @@
  *     { action: 'setGroupPins', pin, pins }                          the group leaders' PINs { slot_1: '123456', … }
  *     { action: 'groupPinStatus', pin }                              which groups have a PIN
  *   The group leaders' page (rg.html) signs in with its group PIN instead — the group is known from the PIN:
- *     { action: 'groupLogin',   groupPin }                           which group, this week's total
- *     { action: 'groupAddSale', groupPin, amount, date?, requestId? }  a payment of that group (this week, up to now)
+ *     { action: 'groupLogin',    groupPin }                          which group, this week's payments per day
+ *     { action: 'groupSetCount', groupPin, date, count, requestId? }  that group's payments on a day of this week (up to today)
  *   Commands are pure visual triggers: they live in Script Properties, never in the spreadsheet,
  *   and never touch "Sales"/"Settings".
  *
@@ -67,6 +72,10 @@ var GROUP_PINS_PROPERTY_KEY = 'GROUP_PINS';
 var INVOICE_HEADER = 'Invoice';
 /** One export file is a few hundred rows a month; this only stops an absurd request. */
 var MAX_IMPORT_ROWS = 5000;
+/** Header of the "Sales" column that says how many payments a row stands for (added on first use). */
+var COUNT_HEADER = 'Count';
+/** Payments of one group on one day — a sanity bound for the counter. */
+var MAX_DAY_COUNT = 999;
 
 /** After this many wrong PINs within PIN_FAILURE_WINDOW_SEC the admin API refuses everything for PIN_LOCK_SEC. */
 var MAX_PIN_FAILURES = 5;
@@ -94,7 +103,7 @@ function getSpreadsheet_() {
 /**
  * Run ONCE from the Apps Script editor (function dropdown > setupSpreadsheet > Run; Google asks for access the
  * first time). Creates the spreadsheet «победи дракона» in the owner's Drive with the two tabs this backend needs:
- *   Sales    Date | Amount | ROP | Invoice   (ROP has a drop-down of the six groups)
+ *   Sales    Date | Amount | ROP | Invoice | Count   (ROP has a drop-down of the six groups)
  *   Settings Key | Value           (WeeklyPlan, TotalMeters)
  * and stores its id in Script Properties. Safe to run again: it does nothing if a spreadsheet is already set up.
  */
@@ -109,7 +118,7 @@ function setupSpreadsheet() {
 
   var sales = ss.getActiveSheet();
   sales.setName(SALES_SHEET_NAME);
-  sales.getRange(1, 1, 1, 4).setValues([['Date', 'Amount', 'ROP', INVOICE_HEADER]]).setFontWeight('bold');
+  sales.getRange(1, 1, 1, 5).setValues([['Date', 'Amount', 'ROP', INVOICE_HEADER, COUNT_HEADER]]).setFontWeight('bold');
   sales.setFrozenRows(1);
   sales.getRange('A2:A').setNumberFormat('yyyy-mm-dd');
   sales.getRange('B2:B').setNumberFormat('#,##0');
@@ -200,7 +209,8 @@ var ACTIONS_ = {
   login: function (body) { return { ok: true }; },
   setPlan: actionSetPlan_,
   listSales: actionListSales_,
-  addSale: actionAddSale_,
+  dayCount: actionDayCount_,
+  setDayCount: actionSetDayCount_,
   importSales: actionImportSales_,
   changePin: actionChangePin_,
   command: actionCommand_,
@@ -212,7 +222,7 @@ var ACTIONS_ = {
 /** The group leaders' page (rg.html): `groupPin` instead of `pin`; the handler also gets the leader's slot. */
 var GROUP_ACTIONS_ = {
   groupLogin: actionGroupLogin_,
-  groupAddSale: actionGroupAddSale_
+  groupSetCount: actionGroupSetCount_
 };
 
 /** Manual test helper — run from the editor, inspect via View > Logs. */
@@ -223,9 +233,10 @@ function testDoGet() {
 
 /* ------------------------------------------------------------------ actions */
 
+/** The weekly plan, in payments (a whole number). */
 function actionSetPlan_(body) {
   var plan = Number(body.plan);
-  if (!isFinite(plan) || plan < 0) return badRequest_('plan');
+  if (!isFinite(plan) || plan < 0 || Math.floor(plan) !== plan) return badRequest_('plan');
   setSetting_('WeeklyPlan', plan);
   return { ok: true, plan: plan };
 }
@@ -237,15 +248,12 @@ function actionListSales_(body) {
   limit = Math.min(limit, 200);
 
   var tz = getSpreadsheet_().getSpreadsheetTimeZone();
-  var sheet = getSalesSheet_();
-  var cols = salesColumns_(sheet);
-  var invoiceCol = invoiceColumn_(sheet, false);
+  var table = readSales_(false);
+  var cols = table.cols;
+  var values = table.values;
   var status = computeWeeklyStatus_();
 
-  // Read the whole sheet: getLastRow() also counts rows that only hold other data (the ROP drop-down's
-  // list of departments lives in column F of the real sheet, names in column D), so rows are judged by
-  // the three columns that matter.
-  var values = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), sheet.getLastColumn()).getValues();
+  // Rows are judged by Date / Amount / ROP: getLastRow() also counts rows that only hold other data.
   var sales = [];
   var totalRows = 0;
   for (var i = values.length - 1; i >= 1; i--) {
@@ -258,7 +266,8 @@ function actionListSales_(body) {
       date: raw instanceof Date ? formatSaleDate_(raw, tz) : String(raw),
       amount: Number(values[i][cols.amount]) || 0,
       rop: String(values[i][cols.rop] || ''),
-      invoice: invoiceCol >= 0 ? String(values[i][invoiceCol] || '') : ''
+      invoice: cols.invoice >= 0 ? String(values[i][cols.invoice] || '') : '',
+      count: rowPayments_(values[i], cols)
     });
   }
 
@@ -272,37 +281,53 @@ function actionListSales_(body) {
   };
 }
 
-/** Appends one payment row. Real data: it moves the week's totals and makes the heroes strike on every display. */
-function actionAddSale_(body) {
+/** How many payments a group has on a day (the admin page's counter starts from it). */
+function actionDayCount_(body) {
   var rop = validateRop_(body.rop);
-  var amount = validateAmount_(body.amount);
-  var date = parseSaleDate_(body.date);
-  if (!rop || amount === null || !date) return badRequest_(!rop ? 'rop' : amount === null ? 'amount' : 'date');
+  if (DEPARTMENT_CODES.indexOf(rop) < 0) return badRequest_('rop');
+  var day = validDay_(body.date);
+  if (!day) return badRequest_('date');
+  return { ok: true, rop: rop, date: day, count: dayPayments_(readSales_(false), rop)[day] || 0 };
+}
 
-  return withLock_(function () {
-    return { ok: true, added: appendSale_(date, amount, rop), status: computeWeeklyStatus_() };
-  });
+/** Sets a group's payments on a day (admin page, «Внести оплату»): any day up to today. */
+function actionSetDayCount_(body) {
+  var rop = validateRop_(body.rop);
+  if (DEPARTMENT_CODES.indexOf(rop) < 0) return badRequest_('rop');
+  var day = validDay_(body.date);
+  if (!day || day > today_()) return badRequest_('date');
+  var count = validCount_(body.count);
+  if (count === null) return badRequest_('count');
+  var saved = setDayCount_(rop, day, count);
+  return { ok: true, saved: saved, status: computeWeeklyStatus_() };
 }
 
 /**
- * Writes one payment into the first free sales row; call it under withLock_.
- * Not appendRow(): that goes below the last row holding *anything*, and where other columns reach further down than
- * the sales do it would leave a gap. Take the first row after the last one with a Date/Amount/ROP, and write only
- * those three cells so the neighbouring columns are left alone.
+ * A group's payments on a day become `count`: that day's rows of the group (imported invoices or an earlier count)
+ * are replaced by one row carrying the number — none for 0. Whoever saves last wins: a later import of that day
+ * replaces it again. Returns { rop, date, count, previous }.
  */
-function appendSale_(date, amount, rop) {
-  var sheet = getSalesSheet_();
-  var cols = salesColumns_(sheet);
-  var values = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), sheet.getLastColumn()).getValues();
-  var last = 1;
-  for (var i = 1; i < values.length; i++) {
-    if (!isBlankSale_(values[i], cols)) last = i + 1;
+function setDayCount_(code, day, count) {
+  return withLock_(function () {
+    var table = readSales_(true);
+    var removed = rewriteSales_(table, function (row, rowDay) {
+      return rowDay === day && String(row[table.cols.rop]).trim() === code;
+    }, count > 0 ? [{ day: day, amount: '', rop: code, invoice: '', count: count }] : []);
+    return { rop: code, date: day, count: count, previous: removed.payments };
+  });
+}
+
+/** { 'yyyy-MM-dd': payments } of one group, over the whole sheet. */
+function dayPayments_(table, code) {
+  var tz = getSpreadsheet_().getSpreadsheetTimeZone();
+  var days = {};
+  for (var i = 1; i < table.values.length; i++) {
+    var row = table.values[i];
+    if (isBlankSale_(row, table.cols) || String(row[table.cols.rop]).trim() !== code) continue;
+    var day = saleDay_(row[table.cols.date], tz);
+    if (day) days[day] = (days[day] || 0) + rowPayments_(row, table.cols);
   }
-  var target = last + 1;
-  sheet.getRange(target, cols.date + 1).setValue(date);
-  sheet.getRange(target, cols.amount + 1).setValue(amount);
-  sheet.getRange(target, cols.rop + 1).setValue(rop);
-  return { row: target, date: formatSaleDate_(date, getSpreadsheet_().getSpreadsheetTimeZone()), amount: amount, rop: rop };
+  return days;
 }
 
 /* ------------------------------------------------------ group leaders' page */
@@ -313,40 +338,52 @@ function actionGroupLogin_(body, slot) {
 }
 
 /**
- * A payment of the leader's own group — the group comes from the PIN, never from the request. The date may be any
- * moment of the current week up to now (empty = now): a forgotten payment can be added, past weeks and the future
- * cannot be touched.
+ * The leader's own group's payments on a day — the group comes from the PIN, never from the request. Any day of the
+ * current week up to today: a forgotten day can be filled in, past weeks and the future cannot be touched.
  */
-function actionGroupAddSale_(body, slot) {
-  var amount = validateAmount_(body.amount);
-  if (amount === null) return badRequest_('amount');
-  var date = parseSaleDate_(body.date);
-  if (!date) return badRequest_('date');
-  var bounds = getWeekBounds_(new Date(), getSpreadsheet_().getSpreadsheetTimeZone());
-  if (date < bounds.start || date.getTime() > Date.now() + 60000) return badRequest_('date');
-
-  var code = groupCodeForSlot_(slot);
-  return withLock_(function () {
-    return groupView_(slot, { ok: true, added: appendSale_(date, amount, code) });
-  });
+function actionGroupSetCount_(body, slot) {
+  var day = validDay_(body.date);
+  var week = currentWeek_();
+  if (!day || day < week.start || day > week.today) return badRequest_('date');
+  var count = validCount_(body.count);
+  if (count === null) return badRequest_('count');
+  var saved = setDayCount_(groupCodeForSlot_(slot), day, count);
+  return groupView_(slot, { ok: true, saved: saved });
 }
 
 function groupCodeForSlot_(slot) {
   return DEPARTMENT_CODES[LEADER_SLOTS.indexOf(slot)];
 }
 
-/** Adds { group: {slot, code, leader}, week: {start, today, total} } to a group-page answer. */
+/**
+ * Adds { group: {slot, code, leader}, week: {start, today, total, days: {'yyyy-MM-dd': payments}} } to a group-page
+ * answer — `days` covers this week up to today, so the page shows each day's number without asking again.
+ */
 function groupView_(slot, res) {
   var code = groupCodeForSlot_(slot);
   var leaders = readLeaders_() || {};
-  var status = computeWeeklyStatus_();
+  var week = currentWeek_();
+  var all = dayPayments_(readSales_(false), code);
+  var days = {};
   var total = 0;
-  for (var i = 0; i < status.byRop.length; i++) {
-    if (status.byRop[i].ropName === code) total += status.byRop[i].amount;
+  for (var day in all) {
+    if (day < week.start || day > week.today) continue;
+    days[day] = all[day];
+    total += all[day];
   }
   res.group = { slot: slot, code: code, leader: leaders.hasOwnProperty(slot) ? leaders[slot] : null };
-  res.week = { start: status.weekStart, today: Utilities.formatDate(new Date(), getSpreadsheet_().getSpreadsheetTimeZone(), 'yyyy-MM-dd'), total: total };
+  res.week = { start: week.start, today: week.today, total: total, days: days };
   return res;
+}
+
+/** This week in the sheet's time zone: Monday and today, as 'yyyy-MM-dd'. */
+function currentWeek_() {
+  var tz = getSpreadsheet_().getSpreadsheetTimeZone();
+  return { start: Utilities.formatDate(getWeekBounds_(new Date(), tz).start, tz, 'yyyy-MM-dd'), today: today_() };
+}
+
+function today_() {
+  return Utilities.formatDate(new Date(), getSpreadsheet_().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
 }
 
 /* --------------------------------------------- group PINs (admin page side) */
@@ -403,17 +440,14 @@ function groupPinsSet_(pins) {
 
 /**
  * Replaces the payments of a period with those of an export file (admin page, tab «Импорт»: the file is read in the
- * browser, only date / amount / group / invoice number get here). Every sale dated from..to (inclusive, in the sheet's
- * time zone) goes — imported earlier or typed in by hand — and the file's rows take its place; the rest of the sheet
- * is kept. The file is the truth for its period: re-importing an overlapping export never counts a payment twice, and
- * a payment cancelled in the CRM disappears with the next import.
+ * browser, only date / amount / group / invoice number get here; one row = one invoice = one payment, invoices under
+ * 100 ₽ are left out by the page). Every sale dated from..to (inclusive, in the sheet's time zone) goes — imported
+ * earlier, or a day's count saved by a group leader — and the file's rows take its place; the rest of the sheet is
+ * kept. The file is the truth for its period: re-importing an overlapping export never counts a payment twice, and a
+ * payment cancelled in the CRM disappears with the next import.
  *
  * { dryRun: true } changes nothing and only reports what the sheet holds for the period now (the admin page shows
- * "now → after" per group before the real run).
- *
- * The sheet is rewritten with ONE setValues over its sales rows (kept + imported, sorted by date, the leftover rows
- * blanked) — never a row deletion, and no moment where the old rows are gone but the new ones are not written yet.
- * Only the Date / Amount / ROP / Invoice cells change; other columns keep their values.
+ * "now → after" per group before the real run). The write itself is rewriteSales_ (one setValues, no row deletion).
  */
 function actionImportSales_(body) {
   var from = validDay_(body.from);
@@ -435,85 +469,126 @@ function actionImportSales_(body) {
     rows.push({ day: day, amount: amount, rop: rop, invoice: invoice });
   }
 
-  var tz = getSpreadsheet_().getSpreadsheetTimeZone();
-  var sheet = getSalesSheet_();
-
   if (body.dryRun) {
-    var cols = salesColumns_(sheet);
-    cols.invoice = invoiceColumn_(sheet, false);
-    var values = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), sheet.getLastColumn()).getValues();
-    var current = { rows: 0, amount: 0, manualRows: 0, manualAmount: 0, byRop: {} };
-    for (var j = 1; j < values.length; j++) {
-      if (isBlankSale_(values[j], cols)) continue;
-      var d = saleDay_(values[j][cols.date], tz);
+    var tz = getSpreadsheet_().getSpreadsheetTimeZone();
+    var table = readSales_(false);
+    var current = { rows: 0, payments: 0, manualPayments: 0, byRop: {} };
+    for (var j = 1; j < table.values.length; j++) {
+      var row = table.values[j];
+      if (isBlankSale_(row, table.cols)) continue;
+      var d = saleDay_(row[table.cols.date], tz);
       if (!d || d < from || d > to) continue;
-      var sum = Number(values[j][cols.amount]) || 0;
-      var code = String(values[j][cols.rop] || '').trim();
+      var n = rowPayments_(row, table.cols);
+      var code = String(row[table.cols.rop] || '').trim();
       current.rows++;
-      current.amount += sum;
-      current.byRop[code] = (current.byRop[code] || 0) + sum;
-      if (cols.invoice < 0 || String(values[j][cols.invoice]).trim() === '') {
-        current.manualRows++;
-        current.manualAmount += sum;
-      }
+      current.payments += n;
+      current.byRop[code] = (current.byRop[code] || 0) + n;
+      if (table.cols.invoice < 0 || String(row[table.cols.invoice]).trim() === '') current.manualPayments += n;
     }
     return { ok: true, dryRun: true, from: from, to: to, current: current };
   }
 
   return withLock_(function () {
-    var cols = salesColumns_(sheet);
-    cols.invoice = invoiceColumn_(sheet, true);
-    var values = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), sheet.getLastColumn()).getValues();
-
-    var kept = [];
-    var removed = { rows: 0, amount: 0 };
-    var lastSale = 0; // index (in values) of the last row holding a sale
-    for (var j = 1; j < values.length; j++) {
-      if (isBlankSale_(values[j], cols)) continue;
-      lastSale = j;
-      var d = saleDay_(values[j][cols.date], tz);
-      if (d && d >= from && d <= to) {
-        removed.rows++;
-        removed.amount += Number(values[j][cols.amount]) || 0;
-        continue;
-      }
-      kept.push({ day: d, date: values[j][cols.date], amount: values[j][cols.amount], rop: values[j][cols.rop], invoice: values[j][cols.invoice] });
-    }
-
-    var added = { rows: rows.length, amount: 0 };
-    var midnight = {}; // day -> Date, parsed once per day rather than once per row
-    var incoming = rows.map(function (r) {
-      added.amount += r.amount;
-      if (!midnight[r.day]) midnight[r.day] = Utilities.parseDate(r.day + 'T00:00', tz, "yyyy-MM-dd'T'HH:mm");
-      return { day: r.day, date: midnight[r.day], amount: r.amount, rop: r.rop, invoice: r.invoice };
-    });
-    // A stable sort (V8): rows of one day keep their order — the kept ones first, then the file's.
-    var all = kept.concat(incoming).sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; });
-
-    // Cover every row that held a sale before, so the ones no longer needed are blanked in the same write.
-    var span = Math.max(all.length, lastSale);
-    if (span > 0) {
-      if (sheet.getMaxRows() < span + 1) sheet.insertRowsAfter(sheet.getMaxRows(), span + 1 - sheet.getMaxRows());
-      var touched = [cols.date, cols.amount, cols.rop, cols.invoice];
-      var first = Math.min.apply(null, touched);
-      var width = Math.max.apply(null, touched) - first + 1;
-      var block = [];
-      for (var k = 0; k < span; k++) {
-        var source = values[k + 1] || [];
-        var line = [];
-        for (var c = 0; c < width; c++) line.push(source[first + c] === undefined ? '' : source[first + c]);
-        var sale = all[k];
-        line[cols.date - first] = sale ? sale.date : '';
-        line[cols.amount - first] = sale ? sale.amount : '';
-        line[cols.rop - first] = sale ? sale.rop : '';
-        line[cols.invoice - first] = sale && sale.invoice !== undefined ? sale.invoice : '';
-        block.push(line);
-      }
-      sheet.getRange(2, first + 1, span, width).setValues(block);
-    }
-
-    return { ok: true, from: from, to: to, removed: removed, added: added, status: computeWeeklyStatus_() };
+    var table = readSales_(true);
+    var removed = rewriteSales_(table, function (row, day) { return !!day && day >= from && day <= to; },
+      rows.map(function (r) { return { day: r.day, amount: r.amount, rop: r.rop, invoice: r.invoice, count: 1 }; }));
+    return { ok: true, from: from, to: to, removed: removed, added: { payments: rows.length }, status: computeWeeklyStatus_() };
   });
+}
+
+/* ------------------------------------------------------------- sales table */
+
+/**
+ * The "Sales" sheet read in one go: { sheet, cols: {date, amount, rop, invoice, count}, values }. Invoice and Count
+ * are -1 while the sheet has no such column — unless `create`, which adds them (an import or a saved count does).
+ */
+function readSales_(create) {
+  var sheet = getSalesSheet_();
+  var cols = salesColumns_(sheet);
+  cols.invoice = headerColumn_(sheet, INVOICE_HEADER, create);
+  cols.count = headerColumn_(sheet, COUNT_HEADER, create);
+  var values = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), Math.max(1, sheet.getLastColumn())).getValues();
+  return { sheet: sheet, cols: cols, values: values };
+}
+
+/** How many payments a "Sales" row stands for: its Count, or 1 when it has none (an imported invoice, an old row). */
+function rowPayments_(row, cols) {
+  if (cols.count >= 0) {
+    var cell = row[cols.count];
+    if (cell !== '' && cell !== null && cell !== undefined) {
+      var n = Math.floor(Number(cell));
+      return isFinite(n) && n > 0 ? n : 0;
+    }
+  }
+  return 1;
+}
+
+/** A day's number of payments: a whole number 0..MAX_DAY_COUNT, else null. */
+function validCount_(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  var n = Number(value);
+  return isFinite(n) && Math.floor(n) === n && n >= 0 && n <= MAX_DAY_COUNT ? n : null;
+}
+
+/**
+ * Rewrites the sales rows of a table from readSales_(true) (call under withLock_): every row `replaced(row, day)` says
+ * yes to goes, the `incoming` rows ({ day, amount, rop, invoice, count }) come in, all sorted by day — a stable sort,
+ * so one day keeps its order, the kept rows first. ONE setValues over the sales block, the rows no longer needed
+ * blanked in the same write: never a row deletion, and no moment where the old rows are gone but the new ones are
+ * not written yet. Only the Date / Amount / ROP / Invoice / Count cells change; other columns keep their values.
+ * Returns { rows, payments } of what went.
+ */
+function rewriteSales_(table, replaced, incoming) {
+  var sheet = table.sheet;
+  var cols = table.cols;
+  var values = table.values;
+  var tz = getSpreadsheet_().getSpreadsheetTimeZone();
+
+  var kept = [];
+  var removed = { rows: 0, payments: 0 };
+  var lastSale = 0; // index (in values) of the last row holding a sale
+  for (var j = 1; j < values.length; j++) {
+    if (isBlankSale_(values[j], cols)) continue;
+    lastSale = j;
+    var day = saleDay_(values[j][cols.date], tz);
+    if (replaced(values[j], day)) {
+      removed.rows++;
+      removed.payments += rowPayments_(values[j], cols);
+      continue;
+    }
+    kept.push({ day: day, date: values[j][cols.date], amount: values[j][cols.amount], rop: values[j][cols.rop], invoice: values[j][cols.invoice], count: values[j][cols.count] });
+  }
+
+  var midnight = {}; // day -> Date, parsed once per day rather than once per row
+  var fresh = incoming.map(function (r) {
+    if (!midnight[r.day]) midnight[r.day] = Utilities.parseDate(r.day + 'T00:00', tz, "yyyy-MM-dd'T'HH:mm");
+    return { day: r.day, date: midnight[r.day], amount: r.amount, rop: r.rop, invoice: r.invoice, count: r.count };
+  });
+  var all = kept.concat(fresh).sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; });
+
+  // Cover every row that held a sale before, so the ones no longer needed are blanked in the same write.
+  var span = Math.max(all.length, lastSale);
+  if (span > 0) {
+    if (sheet.getMaxRows() < span + 1) sheet.insertRowsAfter(sheet.getMaxRows(), span + 1 - sheet.getMaxRows());
+    var fields = ['date', 'amount', 'rop', 'invoice', 'count'];
+    var touched = fields.map(function (f) { return cols[f]; });
+    var first = Math.min.apply(null, touched);
+    var width = Math.max.apply(null, touched) - first + 1;
+    var block = [];
+    for (var k = 0; k < span; k++) {
+      var source = values[k + 1] || [];
+      var line = [];
+      for (var c = 0; c < width; c++) line.push(source[first + c] === undefined ? '' : source[first + c]);
+      var sale = all[k];
+      for (var f = 0; f < fields.length; f++) {
+        var v = sale ? sale[fields[f]] : '';
+        line[cols[fields[f]] - first] = v === undefined || v === null ? '' : v;
+      }
+      block.push(line);
+    }
+    sheet.getRange(2, first + 1, span, width).setValues(block);
+  }
+  return removed;
 }
 
 function actionChangePin_(body) {
@@ -627,8 +702,8 @@ function readJsonProperty_(key) {
 var COMMAND_ARGS_ = {
   hit: function (a) {
     var rop = validateRop_(a.rop);
-    var amount = a.amount === undefined ? 50000 : validateAmount_(a.amount);
-    return rop && amount !== null ? { rop: rop, amount: amount } : null;
+    var count = a.count === undefined ? 1 : validCount_(a.count);
+    return rop && count !== null && count >= 1 ? { rop: rop, count: count } : null;
   },
   fall: function (a) {
     var hero = a.hero === undefined ? 'random' : String(a.hero);
@@ -740,6 +815,7 @@ function computeWeeklyStatus_() {
   var dateCol = header.indexOf('Date');
   var amountCol = header.indexOf('Amount');
   var ropCol = header.indexOf('ROP');
+  var countCols = { count: header.indexOf(COUNT_HEADER) };
   if (dateCol < 0 || amountCol < 0 || ropCol < 0) {
     throw new Error('Sales sheet must have Date, Amount, ROP columns');
   }
@@ -754,7 +830,7 @@ function computeWeeklyStatus_() {
     var date = rawDate instanceof Date ? rawDate : new Date(rawDate);
     if (date < bounds.start || date >= bounds.end) continue;
 
-    var amount = Number(row[amountCol]) || 0;
+    var amount = rowPayments_(row, countCols); // payments, not money
     var rop = String(row[ropCol] || '').trim();
     if (!rop) continue;
 
@@ -916,20 +992,20 @@ function salesColumns_(sheet) {
 }
 
 /**
- * 0-based index of the Invoice column; -1 if there is none yet — unless `create`, which then adds it right after
- * the last used column (the first import does that, so a sheet made before imports existed keeps working).
+ * 0-based index of the column headed `header` (Invoice, Count); -1 if there is none yet — unless `create`, which then
+ * adds it right after the last used column (so a sheet made before that column existed keeps working).
  */
-function invoiceColumn_(sheet, create) {
+function headerColumn_(sheet, header, create) {
   var width = Math.max(1, sheet.getLastColumn());
-  var index = sheet.getRange(1, 1, 1, width).getValues()[0].indexOf(INVOICE_HEADER);
+  var index = sheet.getRange(1, 1, 1, width).getValues()[0].indexOf(header);
   if (index >= 0 || !create) return index;
   var column = sheet.getLastColumn() + 1;
   if (sheet.getMaxColumns() < column) sheet.insertColumnsAfter(sheet.getMaxColumns(), column - sheet.getMaxColumns());
   var cell = sheet.getRange(1, column);
-  cell.setValue(INVOICE_HEADER);
+  cell.setValue(header);
   cell.setFontWeight('bold');
-  // Plain text: otherwise Sheets turns «568010911» into a number (and would drop leading zeros of other formats).
-  sheet.getRange(2, column, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+  // Invoice numbers as plain text: otherwise Sheets turns «568010911» into a number (and drops leading zeros).
+  if (header === INVOICE_HEADER) sheet.getRange(2, column, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
   return column - 1;
 }
 

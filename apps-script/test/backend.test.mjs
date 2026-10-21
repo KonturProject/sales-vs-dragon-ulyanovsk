@@ -16,8 +16,8 @@ test('public GET: unchanged week status plus an empty command list and the serve
     const status = b.get();
     assert.equal(status.ok, true);
     assert.equal(status.plan, 5000000);
-    assert.equal(status.totalThisWeek, 400000 + 250000 + 120000);
-    assert.deepEqual(status.byRop.map(r => r.ropName).sort(), ['ВШ1', 'ВШ2']);
+    assert.equal(status.totalThisWeek, 3, 'payments, not money: three rows of this week, one payment each');
+    assert.deepEqual(Object.fromEntries(status.byRop.map(r => [r.ropName, r.amount])), { 'ВШ1': 2, 'ВШ2': 1 });
     assert.deepEqual(status.commands, []);
     assert.equal(status.serverNow, b.now());
 });
@@ -97,91 +97,78 @@ test('listSales: newest first, limited, with week status and the plan', () => {
     assert.equal(res.ok, true);
     assert.equal(res.totalRows, 3, 'the three empty rows that only hold the drop-down list in column F are not sales');
     assert.equal(res.shown, 2);
-    assert.deepEqual(res.sales.map(s => [s.rop, s.amount, s.row]), [['ВШ1', 120000, 4], ['ВШ2', 250000, 3]]);
+    assert.deepEqual(res.sales.map(s => [s.rop, s.count, s.row]), [['ВШ1', 1, 4], ['ВШ2', 1, 3]]);
     assert.match(res.sales[0].date, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
     assert.equal(res.settings.WeeklyPlan, 5000000);
-    assert.equal(res.status.totalThisWeek, 770000);
+    assert.equal(res.status.totalThisWeek, 3);
     assert.equal(b.post({ action: 'listSales', pin: 'no' }).error, 'invalid_pin');
 });
 
-test('addSale fills the first free sales row and leaves the other columns alone (no gap, no appended row)', () => {
-    const b = loadBackend();
-    const rowsBefore = b.salesRows().length;
-    const res = b.post({ action: 'addSale', pin: PIN, rop: 'ВШ5', amount: 150000 });
+test('dayCount / setDayCount: a group\'s payments on a day; that day\'s rows of the group become one row with the count', () => {
+    const b = ulyanovskBackend();
+    assert.equal(b.post({ action: 'dayCount', pin: PIN, rop: 'ВШ4', date: '2026-09-22' }).count, 1, 'an old row without a count is one payment');
+    const res = b.post({ action: 'setDayCount', pin: PIN, rop: 'ВШ4', date: '2026-09-22', count: 3 });
     assert.equal(res.ok, true);
-    assert.equal(res.added.rop, 'ВШ5');
-    assert.equal(res.added.row, 5, 'right after the last real sale, not below the drop-down list in column F');
-    assert.equal(res.status.totalThisWeek, 770000 + 150000);
+    assert.deepEqual(res.saved, { rop: 'ВШ4', date: '2026-09-22', count: 3, previous: 1 });
+    assert.equal(res.status.totalThisWeek, 1 + 3 + 1);
+    assert.equal(b.salesSheet().setValuesCalls, 1, 'one write for the whole table');
 
     const rows = b.salesRows();
-    assert.equal(rows.length, rowsBefore, 'no row was appended at the bottom');
-    const added = rows[4]; // sheet row 5
-    assert.equal(added[1], 150000);
-    assert.equal(added[2], 'ВШ5');
-    assert.equal(typeof added[0].getTime, 'function');
-    assert.equal(added[3], '', 'names column untouched');
-    assert.equal(added[5], 'ВШ5', 'the drop-down list value in column F is still there');
-    assert.deepEqual(rows[5].slice(3), ['', '', 'ВШ6'], 'the next row is untouched');
+    assert.deepEqual(rows[0], ['Date', 'Amount', 'ROP', 'Invoice', 'Count'], 'the first save adds the Invoice and Count columns');
+    const group = rows.slice(1).filter(r => r[2] === 'ВШ4');
+    assert.equal(group.length, 1);
+    assert.deepEqual([group[0][1], group[0][3], group[0][4]], ['', '', 3]);
+    assert.equal(b.post({ action: 'dayCount', pin: PIN, rop: 'ВШ4', date: '2026-09-22' }).count, 3);
+    assert.deepEqual(Object.fromEntries(b.get().byRop.map(r => [r.ropName, r.amount])), { 'ВШ1': 1, 'ВШ4': 3, 'ВШ5': 1 }, 'the other groups and days are untouched');
+    assert.equal(b.post({ action: 'listSales', pin: PIN }).sales.find(s => s.rop === 'ВШ4').count, 3);
 });
 
-test('two additions in a row go into consecutive rows', () => {
-    const b = loadBackend();
-    assert.equal(b.post({ action: 'addSale', pin: PIN, rop: 'ВШ1', amount: 1000 }).added.row, 5);
-    assert.equal(b.post({ action: 'addSale', pin: PIN, rop: 'ВШ2', amount: 2000 }).added.row, 6);
-    assert.equal(b.post({ action: 'listSales', pin: PIN }).sales.map(s => s.row).join(), '6,5,4,3,2');
+test('setDayCount: 0 clears the day, a day without rows gets one, the other columns stay', () => {
+    const b = loadBackend(); // the harness sheet: names in D, a drop-down list in F reaching further down
+    assert.equal(b.post({ action: 'setDayCount', pin: PIN, rop: 'ВШ1', date: '2026-09-21', count: 0 }).saved.previous, 1);
+    assert.equal(b.get().totalThisWeek, 2);
+    assert.equal(b.post({ action: 'setDayCount', pin: PIN, rop: 'ВШ6', date: '2026-09-23', count: 2 }).status.totalThisWeek, 4);
+    const rows = b.salesRows();
+    assert.deepEqual([rows[0][6], rows[0][7]], ['Invoice', 'Count'], 'added after the last used column (F)');
+    assert.deepEqual(rows.map(r => r[5]), ['', 'ВШ1', 'ВШ2', 'ВШ3', 'ВШ5', 'ВШ6', 'ВШ9'], 'column F untouched');
+    assert.equal(b.post({ action: 'listSales', pin: PIN }).totalRows, 3);
 });
 
-test('addSale follows the header order, not fixed positions', () => {
-    const b = loadBackend();
-    // swap the Date and ROP columns everywhere: header becomes ROP | Amount | Date
-    b.salesRows().forEach(r => { [r[0], r[2]] = [r[2], r[0]]; });
-    assert.equal(b.post({ action: 'addSale', pin: PIN, rop: 'ВШ9', amount: 5000 }).ok, true);
-    const added = b.salesRows()[4];
-    assert.equal(added[0], 'ВШ9');
-    assert.equal(added[1], 5000);
-    assert.equal(typeof added[2].getTime, 'function');
-    assert.equal(added[5], 'ВШ5', 'column F untouched');
-});
-
-test('addSale accepts a past date (date only, or with time) and rejects impossible ones', () => {
-    const b = loadBackend();
-    assert.equal(b.post({ action: 'addSale', pin: PIN, rop: 'ВШ2', amount: 1000, date: '2026-09-21' }).added.date, '2026-09-21', 'a date without a time is stored as midnight and shown without one');
-    assert.equal(b.post({ action: 'addSale', pin: PIN, rop: 'ВШ2', amount: 1000, date: '2026-09-22T09:30' }).added.date, '2026-09-22 09:30');
-    const listed = b.post({ action: 'listSales', pin: PIN, limit: 2 }).sales.map(s => s.date);
-    assert.deepEqual(listed, ['2026-09-22 09:30', '2026-09-21']);
-    for (const date of ['22.09.2026', '2026-13-40', '2019-01-01', '2030-01-01', 'yesterday']) {
-        assert.equal(b.post({ action: 'addSale', pin: PIN, rop: 'ВШ2', amount: 1000, date }).error, 'bad_request', date);
-    }
-});
-
-test('addSale rejects bad departments and amounts, including spreadsheet-formula injection', () => {
-    const b = loadBackend();
-    const rows = JSON.stringify(b.salesRows());
-    const bad = [
-        { rop: '=IMPORTXML("http://x")', amount: 1 },
-        { rop: '+cmd', amount: 1 },
-        { rop: '@SUM(A1)', amount: 1 },
-        { rop: '', amount: 1 },
-        { rop: 'x'.repeat(40), amount: 1 },
-        { rop: 'ВШ1', amount: -5 },
-        { rop: 'ВШ1', amount: 0 },
-        { rop: 'ВШ1', amount: 'abc' },
-        { rop: 'ВШ1', amount: '' },
-        { rop: 'ВШ1', amount: 1e12 },
+test('setDayCount refuses other groups, future or impossible days and bad numbers, and writes nothing', () => {
+    const b = ulyanovskBackend(); // fake now: Wed 2026-09-23
+    const before = JSON.stringify(b.salesRows());
+    const ok = { rop: 'ВШ1', date: '2026-09-22', count: 2 };
+    const cases = [
+        [{ ...ok, rop: 'ВШ2' }, 'rop'], [{ ...ok, rop: '=1+1' }, 'rop'],
+        [{ ...ok, date: '2026-09-24' }, 'date'], [{ ...ok, date: '22.09.2026' }, 'date'], [{ ...ok, date: '2026-02-30' }, 'date'],
+        [{ ...ok, count: -1 }, 'count'], [{ ...ok, count: 1.5 }, 'count'], [{ ...ok, count: 1000 }, 'count'],
+        [{ ...ok, count: 'abc' }, 'count'], [{ ...ok, count: '' }, 'count'],
     ];
-    for (const payload of bad) assert.equal(b.post({ action: 'addSale', pin: PIN, ...payload }).error, 'bad_request', JSON.stringify(payload));
-    assert.equal(JSON.stringify(b.salesRows()), rows, 'the sheet is unchanged');
+    for (const [payload, field] of cases) assert.equal(b.post({ action: 'setDayCount', pin: PIN, ...payload }).field, field, JSON.stringify(payload));
+    assert.equal(b.post({ action: 'setDayCount', pin: 'bad', ...ok }).error, 'invalid_pin');
+    assert.equal(b.post({ action: 'dayCount', pin: PIN, rop: 'ВШ2', date: '2026-09-22' }).field, 'rop');
+    assert.equal(JSON.stringify(b.salesRows()), before);
+    assert.equal(b.post({ action: 'setDayCount', pin: PIN, ...ok, date: '2026-09-23' }).ok, true, 'today is fine');
 });
 
-test('a retried addSale (same requestId) adds one row only', () => {
-    const b = loadBackend();
-    const rows = saleRows(b).length;
-    const first = b.post({ action: 'addSale', pin: PIN, rop: 'ВШ3', amount: 70000, requestId: 'abc-1' });
-    const again = b.post({ action: 'addSale', pin: PIN, rop: 'ВШ3', amount: 70000, requestId: 'abc-1' });
-    assert.deepEqual(again, first);
-    assert.equal(saleRows(b).length, rows + 1);
-    b.post({ action: 'addSale', pin: PIN, rop: 'ВШ3', amount: 70000, requestId: 'abc-2' });
-    assert.equal(saleRows(b).length, rows + 2);
+test('a retried setDayCount (same requestId) writes once', () => {
+    const b = ulyanovskBackend();
+    const first = b.post({ action: 'setDayCount', pin: PIN, rop: 'ВШ9', date: '2026-09-23', count: 2, requestId: 'c-1' });
+    const writes = b.salesSheet().setValuesCalls;
+    assert.deepEqual(b.post({ action: 'setDayCount', pin: PIN, rop: 'ВШ9', date: '2026-09-23', count: 2, requestId: 'c-1' }), first);
+    assert.equal(b.salesSheet().setValuesCalls, writes);
+});
+
+test('an import replaces the counts saved for its period; a count saved later replaces that day\'s invoices', () => {
+    const b = ulyanovskBackend();
+    b.post({ action: 'setDayCount', pin: PIN, rop: 'ВШ1', date: '2026-09-22', count: 4 });
+    b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows });
+    assert.equal(b.post({ action: 'dayCount', pin: PIN, rop: 'ВШ1', date: '2026-09-22' }).count, 1, 'the file says one invoice');
+    b.post({ action: 'setDayCount', pin: PIN, rop: 'ВШ1', date: '2026-09-22', count: 2 });
+    assert.equal(b.post({ action: 'dayCount', pin: PIN, rop: 'ВШ1', date: '2026-09-22' }).count, 2);
+    const sales = b.post({ action: 'listSales', pin: PIN }).sales;
+    assert.equal(sales.filter(s => s.invoice === '568010911').length, 0, 'the invoice row of that day made way for the count');
+    assert.equal(sales.filter(s => s.invoice === '567674920').length, 1, 'other groups keep their invoices');
 });
 
 test('changePin: needs the old PIN, a 4-12 digit new one; then only the new one works and the old plain PIN is gone', () => {
@@ -215,7 +202,7 @@ test('commands: validated, queued with rising ids, visible on the public GET, ne
     const settingsBefore = JSON.stringify(b.settingsRows());
 
     assert.deepEqual(b.post({ action: 'command', pin: PIN, type: 'growl' }), { ok: true, id: 1 });
-    assert.deepEqual(b.post({ action: 'command', pin: PIN, type: 'hit', args: { rop: 'ВШ5', amount: 90000 } }), { ok: true, id: 2 });
+    assert.deepEqual(b.post({ action: 'command', pin: PIN, type: 'hit', args: { rop: 'ВШ5', count: 3 } }), { ok: true, id: 2 });
     assert.equal(b.post({ action: 'command', pin: PIN, type: 'fall', args: { hero: 'slot_5', mode: 'doze' } }).id, 3);
     b.post({ action: 'command', pin: PIN, type: 'fall' });
     b.post({ action: 'command', pin: PIN, type: 'wake' });
@@ -225,18 +212,18 @@ test('commands: validated, queued with rising ids, visible on the public GET, ne
     const commands = b.get().commands;
     assert.deepEqual(commands.map(c => c.type), ['growl', 'hit', 'fall', 'fall', 'wake', 'confetti', 'celebrate']);
     assert.deepEqual(commands.map(c => c.id), [1, 2, 3, 4, 5, 6, 7]);
-    assert.deepEqual(commands[1].args, { rop: 'ВШ5', amount: 90000 });
+    assert.deepEqual(commands[1].args, { rop: 'ВШ5', count: 3 });
     assert.deepEqual(commands[3].args, { hero: 'random', mode: 'random' });
 
     assert.equal(JSON.stringify(b.salesRows()), salesBefore);
     assert.equal(JSON.stringify(b.settingsRows()), settingsBefore);
 });
 
-test('commands: a hit gets a default amount; bad types/args and a wrong PIN are refused', () => {
+test('commands: a hit shows one payment by default; bad types/args and a wrong PIN are refused', () => {
     const b = loadBackend();
     b.post({ action: 'command', pin: PIN, type: 'hit', args: { rop: 'ВШ1' } });
-    assert.equal(b.get().commands[0].args.amount, 50000);
-    for (const [type, args] of [['explode', {}], ['hit', {}], ['hit', { rop: 'ВШ1', amount: -1 }], ['hit', { rop: '=1+1' }], ['fall', { hero: 'hero_x' }], ['fall', { mode: 'die' }]]) {
+    assert.equal(b.get().commands[0].args.count, 1);
+    for (const [type, args] of [['explode', {}], ['hit', {}], ['hit', { rop: 'ВШ1', count: 0 }], ['hit', { rop: 'ВШ1', count: -1 }], ['hit', { rop: 'ВШ1', count: 1.5 }], ['hit', { rop: '=1+1' }], ['fall', { hero: 'hero_x' }], ['fall', { mode: 'die' }]]) {
         assert.equal(b.post({ action: 'command', pin: PIN, type, args }).error, 'bad_request', type + JSON.stringify(args));
     }
     assert.equal(b.post({ action: 'command', pin: 'bad', type: 'growl' }).error, 'invalid_pin');
@@ -341,7 +328,7 @@ test('importSales dry run: what the sheet holds for the period now, nothing writ
     const res = b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows, dryRun: true });
     assert.equal(res.ok, true);
     assert.equal(res.dryRun, true);
-    assert.deepEqual(res.current, { rows: 2, amount: 370000, manualRows: 2, manualAmount: 370000, byRop: { 'ВШ4': 250000, 'ВШ5': 120000 } });
+    assert.deepEqual(res.current, { rows: 2, payments: 2, manualPayments: 2, byRop: { 'ВШ4': 1, 'ВШ5': 1 } });
     assert.equal(JSON.stringify(b.salesRows()), before);
 });
 
@@ -349,42 +336,42 @@ test('importSales replaces every payment of the period (typed in by hand too) an
     const b = ulyanovskBackend();
     const res = b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows, requestId: 'imp-1' });
     assert.equal(res.ok, true);
-    assert.deepEqual(res.removed, { rows: 2, amount: 370000 });
-    assert.deepEqual(res.added, { rows: 3, amount: 21990 + 30 + 112147.38 });
+    assert.deepEqual(res.removed, { rows: 2, payments: 2 });
+    assert.deepEqual(res.added, { payments: 3 });
     assert.equal(b.salesSheet().setValuesCalls, 1, 'one write for the whole table');
 
     const rows = b.salesRows();
-    assert.deepEqual(rows[0], ['Date', 'Amount', 'ROP', 'Invoice'], 'the first import adds the Invoice column');
+    assert.deepEqual(rows[0], ['Date', 'Amount', 'ROP', 'Invoice', 'Count'], 'the first import adds the Invoice and Count columns');
     const sales = rows.slice(1).filter(r => r[0] !== '');
-    assert.deepEqual(sales.map(r => [r[1], r[2], r[3]]), [
-        [90000, 'ВШ1', ''],
-        [400000, 'ВШ1', ''],
-        [21990, 'ВШ1', '568010911'],
-        [30, 'ВШ4', '568465060'],
-        [112147.38, 'ВШ10', '567674920'],
-    ]);
+    assert.deepEqual(sales.map(r => [r[1], r[2], r[3], r[4]]), [
+        [90000, 'ВШ1', '', ''],
+        [400000, 'ВШ1', '', ''],
+        [21990, 'ВШ1', '568010911', 1],
+        [30, 'ВШ4', '568465060', 1],
+        [112147.38, 'ВШ10', '567674920', 1],
+    ], 'one invoice = one payment; the amount stays for reference');
     assert.ok(sales.every(r => typeof r[0].getTime === 'function'), 'dates are real dates');
 
-    // Monday 2026-09-21 .. the week of the fake "now" (Wed 2026-09-23): the hand-typed 250 000 and 120 000 are gone.
-    assert.equal(res.status.totalThisWeek, 400000 + 21990 + 30 + 112147.38);
+    // Monday 2026-09-21 .. the week of the fake "now" (Wed 2026-09-23): the rows of the 22nd and 23rd are replaced.
+    assert.equal(res.status.totalThisWeek, 1 + 3);
     const byRop = Object.fromEntries(b.get().byRop.map(r => [r.ropName, r.amount]));
-    assert.deepEqual(byRop, { 'ВШ1': 421990, 'ВШ4': 30, 'ВШ10': 112147.38 });
+    assert.deepEqual(byRop, { 'ВШ1': 2, 'ВШ4': 1, 'ВШ10': 1 });
 
     const listed = b.post({ action: 'listSales', pin: PIN, limit: 1 }).sales[0];
-    assert.equal(listed.invoice, '567674920');
+    assert.deepEqual([listed.invoice, listed.count], ['567674920', 1]);
 });
 
 test('importSales again with the same or a fresher overlapping file never counts a payment twice', () => {
     const b = ulyanovskBackend();
     b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows });
     b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-23', rows: importRows });
-    assert.equal(b.get().totalThisWeek, 400000 + 21990 + 30 + 112147.38);
+    assert.equal(b.get().totalThisWeek, 4);
 
     // A later export covers 21..23 and lost one payment (cancelled in the CRM): the sheet follows it.
     const fresher = [{ date: '2026-09-21', amount: 5000, rop: 'ВШ6', invoice: '1' }, importRows[0]];
     const res = b.post({ action: 'importSales', pin: PIN, from: '2026-09-21', to: '2026-09-23', rows: fresher });
-    assert.deepEqual(res.removed, { rows: 4, amount: 400000 + 21990 + 30 + 112147.38 });
-    assert.equal(res.status.totalThisWeek, 5000 + 21990);
+    assert.deepEqual(res.removed, { rows: 4, payments: 4 });
+    assert.equal(res.status.totalThisWeek, 2);
 });
 
 test('importSales with fewer rows than before blanks the leftover rows and leaves other columns alone', () => {
@@ -393,9 +380,9 @@ test('importSales with fewer rows than before blanks the leftover rows and leave
     assert.equal(res.ok, true);
     assert.deepEqual(res.removed.rows, 3);
     const rows = b.salesRows();
-    assert.equal(rows[0][6], 'Invoice', 'added after the last used column (F), not over the names in D');
-    assert.deepEqual([rows[1][1], rows[1][2], rows[1][6]], [21990, 'ВШ1', '568010911']);
-    for (const r of rows.slice(2, 4)) assert.deepEqual([r[0], r[1], r[2], r[6]], ['', '', '', ''], 'old sale rows are blanked');
+    assert.deepEqual([rows[0][6], rows[0][7]], ['Invoice', 'Count'], 'added after the last used column (F), not over the names in D');
+    assert.deepEqual([rows[1][1], rows[1][2], rows[1][6], rows[1][7]], [21990, 'ВШ1', '568010911', 1]);
+    for (const r of rows.slice(2, 4)) assert.deepEqual([r[0], r[1], r[2], r[6], r[7]], ['', '', '', '', ''], 'old sale rows are blanked');
     assert.deepEqual(rows.map(r => r[5]), ['', 'ВШ1', 'ВШ2', 'ВШ3', 'ВШ5', 'ВШ6', 'ВШ9'], 'column F untouched');
     assert.equal(b.post({ action: 'listSales', pin: PIN }).totalRows, 1);
 });
@@ -403,7 +390,7 @@ test('importSales with fewer rows than before blanks the leftover rows and leave
 test('importSales with an empty period list just clears the period', () => {
     const b = ulyanovskBackend();
     const res = b.post({ action: 'importSales', pin: PIN, from: '2026-09-21', to: '2026-09-23', rows: [] });
-    assert.deepEqual(res.removed, { rows: 3, amount: 770000 });
+    assert.deepEqual(res.removed, { rows: 3, payments: 3 });
     assert.equal(res.status.totalThisWeek, 0);
     assert.equal(b.post({ action: 'listSales', pin: PIN }).totalRows, 1, 'last week is kept');
 });
@@ -412,7 +399,7 @@ test('importSales grows the sheet when the rows do not fit', () => {
     const b = ulyanovskBackend();
     b.salesSheet().maxRows = 5;
     const many = Array.from({ length: 20 }, (_, i) => ({ date: '2026-09-22', amount: 1000 + i, rop: 'ВШ9', invoice: String(i) }));
-    assert.equal(b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-22', rows: many }).added.rows, 20);
+    assert.equal(b.post({ action: 'importSales', pin: PIN, from: '2026-09-22', to: '2026-09-22', rows: many }).added.payments, 20);
     assert.equal(b.post({ action: 'listSales', pin: PIN }).totalRows, 3 + 20);
 });
 
@@ -492,7 +479,7 @@ test('groupLogin: the PIN says which group; it carries this week and the leader 
     const res = b.post({ action: 'groupLogin', groupPin: '111111' });
     assert.equal(res.ok, true);
     assert.deepEqual(res.group, { slot: 'slot_1', code: 'ВШ1', leader: null });
-    assert.deepEqual(res.week, { start: '2026-09-21', today: '2026-09-23', total: 400000 + 120000 });
+    assert.deepEqual(res.week, { start: '2026-09-21', today: '2026-09-23', total: 2, days: { '2026-09-21': 1, '2026-09-23': 1 } });
     assert.deepEqual(b.post({ action: 'groupLogin', groupPin: '101010' }).group.code, 'ВШ10');
     b.post({ action: 'setRoster', pin: PIN, leaders: { slot_6: 'Бордачева В.' } });
     assert.equal(b.post({ action: 'groupLogin', groupPin: '101010' }).group.leader, 'Бордачева В.');
@@ -503,37 +490,35 @@ test('group PINs open only the group page, and the admin PIN does not open it', 
     assert.equal(b.post({ action: 'groupLogin', groupPin: PIN }).error, 'invalid_pin', 'the admin PIN is not a group PIN');
     assert.equal(b.post({ action: 'groupLogin', pin: '111111' }).error, 'invalid_pin', 'a group PIN must come as groupPin');
     const sheet = JSON.stringify(b.salesRows()) + JSON.stringify(b.settingsRows());
-    for (const action of ['login', 'listSales', 'setPlan', 'importSales', 'setRoster', 'setGroupPins', 'addSale']) {
+    for (const action of ['login', 'listSales', 'setPlan', 'importSales', 'setRoster', 'setGroupPins', 'setDayCount']) {
         // Wrong admin PINs: refused, and from the fifth one on the admin API is locked.
         assert.ok(['invalid_pin', 'locked'].includes(b.post({ action, pin: '111111', plan: 1, rop: 'ВШ1', amount: 1 }).error), action);
     }
     assert.equal(JSON.stringify(b.salesRows()) + JSON.stringify(b.settingsRows()), sheet);
 });
 
-test('groupAddSale writes a payment of the PIN\'s own group, whatever group the request names', () => {
+test('groupSetCount sets the payments of the PIN\'s own group, whatever group the request names', () => {
     const b = withGroupPins();
-    const res = b.post({ action: 'groupAddSale', groupPin: '444444', amount: 75000, rop: 'ВШ1', requestId: 'g1' });
+    const res = b.post({ action: 'groupSetCount', groupPin: '444444', rop: 'ВШ1', date: '2026-09-23', count: 3, requestId: 'g1' });
     assert.equal(res.ok, true);
-    assert.equal(res.added.rop, 'ВШ6');
-    assert.equal(res.added.amount, 75000);
-    assert.equal(res.week.total, 75000);
+    assert.deepEqual(res.saved, { rop: 'ВШ6', date: '2026-09-23', count: 3, previous: 0 });
     assert.equal(res.group.code, 'ВШ6');
-    const byRop = Object.fromEntries(b.get().byRop.map(r => [r.ropName, r.amount]));
-    assert.equal(byRop['ВШ6'], 75000);
-    assert.deepEqual(b.post({ action: 'groupAddSale', groupPin: '444444', amount: 75000, requestId: 'g1' }), res, 'a retry adds nothing');
-    assert.equal(b.post({ action: 'listSales', pin: PIN }).sales.filter(s => s.rop === 'ВШ6').length, 1);
+    assert.deepEqual(res.week.days, { '2026-09-23': 3 });
+    assert.equal(res.week.total, 3);
+    assert.equal(Object.fromEntries(b.get().byRop.map(r => [r.ropName, r.amount]))['ВШ6'], 3);
+    const writes = b.salesSheet().setValuesCalls;
+    assert.deepEqual(b.post({ action: 'groupSetCount', groupPin: '444444', date: '2026-09-23', count: 3, requestId: 'g1' }), res, 'a retry writes nothing');
+    assert.equal(b.salesSheet().setValuesCalls, writes);
+    assert.equal(b.post({ action: 'groupSetCount', groupPin: '444444', date: '2026-09-23', count: 1 }).week.total, 1, 'a mistake is fixed with a lower number');
 });
 
-test('groupAddSale: this week up to now only; bad amounts refused', () => {
-    const b = withGroupPins(); // fake now: Wed 2026-09-23 10:00, week from Mon 2026-09-21
-    const add = (extra) => b.post({ action: 'groupAddSale', groupPin: '222222', amount: 1000, ...extra });
-    assert.equal(add({ date: '2026-09-21' }).added.date, '2026-09-21', 'Monday of this week');
-    assert.equal(add({ date: '2026-09-23T09:30' }).added.date, '2026-09-23 09:30', 'earlier today');
-    assert.equal(add({}).ok, true, 'now');
-    for (const date of ['2026-09-20', '2026-09-23T11:00', '2026-09-24', '2026-13-01', 'вчера']) {
-        assert.equal(add({ date }).field, 'date', date);
-    }
-    for (const amount of [0, -5, 'abc', '', 1e12]) assert.equal(add({ amount }).field, 'amount', String(amount));
+test('groupSetCount: days of this week up to today only; bad numbers refused', () => {
+    const b = withGroupPins(); // fake now: Wed 2026-09-23, week from Mon 2026-09-21
+    const set = (extra) => b.post({ action: 'groupSetCount', groupPin: '222222', date: '2026-09-23', count: 1, ...extra });
+    assert.equal(set({ date: '2026-09-21' }).ok, true, 'Monday of this week');
+    assert.equal(set({}).ok, true, 'today');
+    for (const date of ['2026-09-20', '2026-09-24', '2026-13-01', 'вчера', '', undefined]) assert.equal(set({ date }).field, 'date', String(date));
+    for (const count of [-1, 1.5, 1000, 'abc', '', undefined]) assert.equal(set({ count }).field, 'count', String(count));
 });
 
 test('group PIN guessing locks only the group page, a new PIN replaces the old one', () => {

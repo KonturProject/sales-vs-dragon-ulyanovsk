@@ -11,7 +11,7 @@ export interface MoneyInPayload {
 /**
  * An animation the admin page asked the displays to play (see apps-script/Code.gs, action 'command').
  * Purely visual — handlers must not touch GameState.
- *   hit {rop, amount} | fall {hero, mode} | wake | growl | confetti | celebrate
+ *   hit {rop, count} | fall {hero, mode} | wake | growl | confetti | celebrate
  */
 export interface AdminCommandPayload {
     type: string;

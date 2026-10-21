@@ -3,8 +3,8 @@ import { GAME, HeroSlug } from '../core/Constants';
 import { RosterConfig } from '../systems/RosterConfig';
 
 const ROW_HEIGHT = 22;
-/** Room for «● ВШ10 • Бордачева В.» plus a seven-digit sum. */
-const PANEL_WIDTH = 270;
+/** Room for «● ВШ10 • Бордачева В.» plus the group's number of payments. */
+const PANEL_WIDTH = 230;
 const PANEL_PADDING = 6;
 
 interface Row {
@@ -41,7 +41,7 @@ export class Leaderboard extends GameObjects.Container {
                 resolution: GAME.RENDER_SCALE,
                 color: '#cfe3f5',
             }).setOrigin(0, 0.5);
-            const amountText = scene.add.text(PANEL_WIDTH - 10, ROW_HEIGHT / 2, '0 ₽', {
+            const amountText = scene.add.text(PANEL_WIDTH - 10, ROW_HEIGHT / 2, '0', {
                 fontFamily: 'Arial Black, Arial, sans-serif',
                 fontSize: '13px',
                 resolution: GAME.RENDER_SCALE,
@@ -72,7 +72,7 @@ export class Leaderboard extends GameObjects.Container {
         }
     }
 
-    /** Re-sorts rows by amount (descending) and tweens each to its new rank, updating displayed totals. */
+    /** Re-sorts rows by the number of payments (descending) and tweens each to its new rank, updating the numbers. */
     update(byRop: Record<string, number>) {
         const amounts = new Map<HeroSlug, number>();
         for (const [ropName, amount] of Object.entries(byRop)) {
@@ -99,7 +99,7 @@ export class Leaderboard extends GameObjects.Container {
                     ease: 'Sine.easeInOut',
                 });
             }
-            const amountLabel = `${Math.round(amounts.get(slug) ?? 0).toLocaleString('ru-RU')} ₽`;
+            const amountLabel = String(Math.round(amounts.get(slug) ?? 0));
             if (entry.amountText.text !== amountLabel) entry.amountText.setText(amountLabel);
         });
     }

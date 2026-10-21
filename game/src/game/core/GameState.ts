@@ -1,5 +1,6 @@
 import { DAYS } from './Constants';
 
+/** A group's total this week. The Ulyanovsk game counts payments: `amount` is a NUMBER OF PAYMENTS, not money. */
 export interface RopAmount {
     ropName: string;
     amount: number;
