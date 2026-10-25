@@ -2,32 +2,32 @@
     "ok": true,
     "weekStart": "2026-09-08",
     "weekEnd": "2026-09-15",
-    "plan": 5000000,
-    "totalThisWeek": 3200000,
+    "plan": 60,
+    "totalThisWeek": 31,
     "byRop": [
         {
             "ropName": "ВШ1",
-            "amount": 720000
+            "amount": 8
         },
         {
             "ropName": "ВШ4",
-            "amount": 610000
+            "amount": 7
         },
         {
             "ropName": "ВШ5",
-            "amount": 540000
+            "amount": 6
         },
         {
             "ropName": "ВШ6",
-            "amount": 480000
+            "amount": 4
         },
         {
             "ropName": "ВШ9",
-            "amount": 390000
+            "amount": 3
         },
         {
             "ropName": "ВШ10",
-            "amount": 460000
+            "amount": 3
         }
     ],
     "lastUpdated": "2026-09-12T10:32:00+03:00"
